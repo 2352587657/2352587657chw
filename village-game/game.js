@@ -2,10 +2,11 @@
   'use strict';
   const M = window.VillageModel;
   const $ = id => document.getElementById(id);
-  const KEY = 'riverdale-village-v1';
+  const KEY = 'riverdale-village-v2';
   const DAY_MS = 12000;
   let state = M.fresh();
-  let selected = 9;
+  let selected = M.CAMP+1;
+  let mapView;
   let paused = true;
   let speed = 1;
   let elapsed = 0;
@@ -49,7 +50,7 @@
     if (raw) {
       const data = JSON.parse(raw);
       state = M.validate(data.state);
-      selected = Number.isInteger(data.selected) && data.selected >= 0 && data.selected < 24 ? data.selected : 9;
+      selected = Number.isInteger(data.selected) && data.selected >= 0 && data.selected < M.MAP_WIDTH*M.MAP_HEIGHT ? data.selected : M.CAMP+1;
       speed = [1, 2, 4].includes(data.speed) ? data.speed : 1;
       saved = true;
     }
@@ -83,12 +84,12 @@
   }
   function begin() { hideModal(); paused = false; save(); render(); }
   function restart() {
-    state = M.fresh(); selected = 9; elapsed = 0; speed = 1; paused = true;
+    state = M.fresh(); selected = M.CAMP+1; elapsed = 0; speed = 1; paused = true;
     hideModal(); save(); render(); welcome(false);
   }
   function welcome(isSaved) {
     showModal('welcome', isSaved ? '河谷，还在等你。' : '五个人，一片空地。',
-      `<p>${isSaved ? '已找回这台设备上的村落。回来后时间保持暂停，准备好再继续。' : '这里没有复杂的操作，也没有需要追赶的敌人。先照顾好五位居民，再让更多人把这里当成家。'}</p><ul><li>采食、伐木、采石、建造，四种工作由你分配。</li><li>点空地选址，再建木屋、农圃和仓库。</li><li>20 天内：10 位居民、有足够床位、农圃、仓库，且食物能够自给。</li></ul><p>一开始就能暂停慢慢想，也能点击“推进一天”结算。进度自动保存在浏览器；离线不会推进时间。</p>`,
+      `<p>${isSaved ? '已找回这台设备上的村落。回来后时间保持暂停，准备好再继续。' : '这里没有复杂的操作，也没有需要追赶的敌人。先照顾好五位居民，再让更多人把这里当成家。'}</p><ul><li>采食、伐木、采石、建造，四种工作由你分配。</li><li>拖动和缩放地图选址。农圃建在肥沃土地，树林与石矿需先清理。</li><li>20 天内：10 位居民、有足够床位、农圃、仓库，且食物能够自给。</li></ul><p>一开始就能暂停慢慢想，也能点击“推进一天”结算。进度自动保存在浏览器；离线不会推进时间。</p>`,
       [{ label: isSaved ? '继续这段生活' : '开拓这片土地', primary: true, run: begin }]);
   }
   function result() {
@@ -105,7 +106,7 @@
     if (state.project && state.jobs.build === 0) return '工地正在等待建造者。减少其他岗位人数，再为建造分配至少 1 人。';
     if (M.idle(state) > 0) return `有 ${M.idle(state)} 位居民尚未分配工作。点击岗位旁的 ＋，让每双手都有事情做。`;
     if (M.capacity(state) <= state.population) return '先建一座木屋。没有空床位，路过的旅人就不会加入村落。';
-    if (!M.count(state, 'farm')) return '接下来可以建农圃：同样的采食人数，可以养活更多居民。';
+    if (!M.count(state, 'farm')) return '接下来可以建农圃（在浅黄色肥沃土地上）：同样的采食人数，可以养活更多居民。';
     if (!M.count(state, 'warehouse')) return '建一座仓库，把资源上限从 30 提高到 80，也完成一个发展目标。';
     if (M.capacity(state) < 10) return '再建一座木屋，为 10 位居民提前准备好床位。';
     return '保持食物自给，留足两天储粮，等待每三天一次的旅人到访。';
@@ -121,22 +122,16 @@
     $('resources').innerHTML = cards.map(([key, name, value, max, rate, bad]) => `<div class="resource" data-resource="${key}"><div class="resource-symbol">${icon(key, true)}</div><div><div class="name">${name}</div><div class="amount">${value}<small>/ ${max}${key === 'people' ? ' 床位' : ''}</small></div><div class="rate ${bad ? 'negative' : ''}">${rate}</div></div></div>`).join('');
   }
   function renderMap() {
-    $('lots').replaceChildren();
-    state.tiles.forEach((type, index) => {
-      const project = state.project && state.project.tile === index;
-      const button = document.createElement('button');
-      button.className = `lot ${type ? 'occupied' : ''} ${index === selected ? 'selected' : ''} ${project ? 'project-lot' : ''}`;
-      button.dataset.lot = index;
-      const name = type === 'camp' ? '开拓营地' : type ? M.BUILDINGS[type].name : project ? '施工中' : '空地';
-      button.setAttribute('aria-label', `地块 ${index + 1}：${name}`);
-      button.setAttribute('aria-pressed', String(index === selected));
-      if (type || project) button.innerHTML = icon(project ? state.project.type : type) + `<span class="lot-label">${name}</span>`;
-      else button.innerHTML = '<span class="plus" aria-hidden="true">+</span>';
-      button.addEventListener('click', () => { selected = index; save(); renderMap(); renderBuildings(); });
-      $('lots').appendChild(button);
-    });
-    $('map-population').textContent = `${state.population} 位居民 · ${M.count(state, 'house')} 座木屋`;
-    $('selection-label').textContent = state.tiles[selected] ? `已选择：${state.tiles[selected] === 'camp' ? '开拓营地' : M.BUILDINGS[state.tiles[selected]].name}` : state.project && state.project.tile === selected ? '这里正在施工，完成后才能开始下一座建筑。' : `已选择第 ${selected + 1} 块空地 · 选择下方建筑开工`;
+    if(!mapView) mapView=new window.VillageMap($('map'),icon,index=>{selected=index;save();renderMap();renderBuildings();});
+    mapView.update(state,selected);
+    const terrain=M.TERRAIN_NAMES[state.terrain[selected]];
+    const name=state.tiles[selected]==='camp'?'开拓营地':state.tiles[selected]?M.BUILDINGS[state.tiles[selected]].name:terrain;
+    const x=selected%M.MAP_WIDTH+1,y=Math.floor(selected/M.MAP_WIDTH)+1;
+    $('selection-label').textContent=`(${x}, ${y}) ${name} · ${M.inReach(state,selected)?'村落范围内':'远离村落，需逐步扩建'}`;
+    const reason=M.clearReason(state,selected);
+    $('clear-land').disabled=!!reason;
+    $('clear-land').title=reason||'分配建造者清理，完成后获得资源';
+    $('clear-land').textContent=['forest','stone'].includes(state.terrain[selected])?'清理'+terrain:'清理地块';
   }
   function renderBuildings() {
     $('building-options').replaceChildren();
@@ -154,7 +149,7 @@
       $('building-options').appendChild(button);
     }
     if (state.project) {
-      const p = state.project, spec = M.BUILDINGS[p.type];
+      const p = state.project, spec = M.projectSpec(state);
       $('project').innerHTML = `<div class="project-text"><strong>${spec.name}施工中</strong> · ${p.progress} / ${spec.work} 工作量<br><span class="soft">${state.jobs.build > 0 ? `每天推进 ${state.jobs.build}，预计还需 ${Math.ceil((spec.work - p.progress) / state.jobs.build)} 天` : '分配建造者后才能推进'}</span></div><div class="mini-track"><span style="width:${p.progress / spec.work * 100}%"></span></div><button id="cancel-project">取消并返还</button>`;
       $('cancel-project').addEventListener('click', () => { M.cancelBuild(state); save(); render(); toast('工地已取消，建材按仓储容量返还'); });
     } else $('project').innerHTML = '<span class="soft">没有施工中的建筑。建材在开工时扣除，建造者每天推进 1 工作量 / 人。</span>';
@@ -213,10 +208,11 @@
     if (state.phase !== 'playing') result();
     else toast(`第 ${state.day} 天已结算${M.idle(state) > 0 ? ' · 有居民等待分配工作' : ''}`);
   }
+  $('clear-land').addEventListener('click',()=>{const outcome=M.startClear(state,selected);if(outcome.ok){save();render();toast('已安排清理，建造者会推进工程');}else toast(outcome.reason);});
   $('pause').addEventListener('click', () => { paused = !paused; renderClock(); });
   $('next-day').addEventListener('click', advance);
   document.querySelectorAll('[data-speed]').forEach(button => button.addEventListener('click', () => { speed = Number(button.dataset.speed); save(); renderClock(); }));
-  $('help').addEventListener('click', () => showModal('help', '先照顾人，再扩建村落。', '<p>食物每天先产出再消耗，每人吃 1 份。每名采食者产出 3 份，每座农圃额外增加 1 份 / 人。</p><ul><li>用 − 腾出待分配居民，再用 ＋ 安排新岗位。</li><li>点击空地，再选建筑。必须有建造者，工地才会推进。</li><li>木屋增加 3 个床位；仓库为每种资源增加 50 容量。</li><li>旅人每 3 天来一次，需要空床位、两天储粮且当天不缺粮。</li><li>连续两天缺粮，有一位居民离开。没人留下或 20 天未达标，本局失败。</li></ul><p>每日新建成的农圃从次日生效。新居民当日领取 2 份食物，从次日开始正常消耗。胜利需要 10 人、住处、农圃、仓库、两天储粮和不亏损的食物生产。</p>', [{ label: '明白了，返回村落', primary: true, run: hideModal }]));
+  $('help').addEventListener('click', () => showModal('help', '先照顾人，再扩建村落。', '<p>食物每天先产出再消耗，每人吃 1 份。每名采食者产出 3 份，每座农圃额外增加 1 份 / 人。农圃必须建在肥沃土地，河流和山地不能直接建造。</p><ul><li>用 − 腾出待分配居民，再用 ＋ 安排新岗位。</li><li>拖动地图、滚轮缩放，小地图快速定位；回到营地或全图按钮帮助找路。点击地块，再选建筑。建造者推进工地与清理。</li><li>木屋增加 3 个床位；仓库为每种资源增加 50 容量。</li><li>旅人每 3 天来一次，需要空床位、两天储粮且当天不缺粮。</li><li>连续两天缺粮，有一位居民离开。没人留下或 20 天未达标，本局失败。</li></ul><p>每日新建成的农圃从次日生效。新居民当日领取 2 份食物，从次日开始正常消耗。胜利需要 10 人、住处、农圃、仓库、两天储粮和不亏损的食物生产。</p>', [{ label: '明白了，返回村落', primary: true, run: hideModal }]));
   $('new-game').addEventListener('click', () => showModal('restart', '重新开拓这片河谷？', '<p>这会替换当前浏览器存档。想保留这座村落，可以先返回并点击“导出存档”。</p>', [{ label: '返回村落', run: hideModal }, { label: '确认重新开始', primary: true, run: restart }]));
   $('export-save').addEventListener('click', () => {
     const blob = new Blob([JSON.stringify({ state, selected, speed }, null, 2)], { type: 'application/json' });
@@ -227,10 +223,10 @@
   $('save-file').addEventListener('change', async event => {
     const file = event.target.files[0]; if (!file) return;
     try {
-      if (file.size > 100000) throw new Error('存档文件过大');
+      if (file.size > 200000) throw new Error('存档文件过大');
       const payload = JSON.parse(await file.text());
       const imported = M.validate(payload.state);
-      showModal('import', '载入这座村落？', `<p>存档包含第 ${imported.day} 天的村落，现有 ${imported.population} 位居民。载入会覆盖当前自动存档；取消则保留当前游戏。</p>`, [{ label: '取消', run: hideModal }, { label: '确认载入', primary: true, run: () => { state = imported; selected = 9; speed = [1, 2, 4].includes(payload.speed) ? payload.speed : 1; elapsed = 0; hideModal(); paused = true; save(); render(); if (state.phase !== 'playing') result(); toast('存档已载入，时间保持暂停'); } }]);
+      showModal('import', '载入这座村落？', `<p>存档包含第 ${imported.day} 天的村落，现有 ${imported.population} 位居民。载入会覆盖当前自动存档；取消则保留当前游戏。</p>`, [{ label: '取消', run: hideModal }, { label: '确认载入', primary: true, run: () => { state = imported; selected = M.CAMP+1; speed = [1, 2, 4].includes(payload.speed) ? payload.speed : 1; elapsed = 0; hideModal(); paused = true; save(); render(); if (state.phase !== 'playing') result(); toast('存档已载入，时间保持暂停'); } }]);
     } catch (error) { toast('无法载入：' + error.message); }
     event.target.value = '';
   });

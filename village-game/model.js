@@ -1,21 +1,49 @@
 (function (root) {
   'use strict';
-  const VERSION = 1;
+  const VERSION = 2;
+  const MAP_WIDTH = 40, MAP_HEIGHT = 32, CAMP = 16 * MAP_WIDTH + 20;
+  const TERRAIN_NAMES = { grass: '草地', fertile: '肥沃土地', forest: '树林', stone: '石矿', water: '河流', hill: '山地' };
+  const terrainKnown = type => typeof type === 'string' && Object.prototype.hasOwnProperty.call(TERRAIN_NAMES, type);
+  function terrainMap() {
+    const cells = [];
+    const noise = (x, y) => { const n = Math.sin(x * 127.1 + y * 311.7 + 482) * 43758.5453; return n - Math.floor(n); };
+    for (let y = 0; y < MAP_HEIGHT; y++) for (let x = 0; x < MAP_WIDTH; x++) {
+      const river = 8 + Math.sin(y * .19) * 3 + Math.sin(y * .47) * .8;
+      const distance = Math.abs(x - river);
+      const grove = Math.sin(x * .42 + y * .17) + Math.cos(y * .39 - x * .12);
+      let type = distance < 1.25 ? 'water' : (Math.hypot(x - 35, y - 4) < 4.8 || Math.hypot(x - 3, y - 27) < 3.4) ? 'hill' : grove > .58 ? 'forest' : noise(x, y) > .94 ? 'stone' : distance < 3 || noise(x, y) < .23 ? 'fertile' : 'grass';
+      if (Math.hypot(x - 20, y - 16) < 4) type = 'grass';
+      cells.push(type);
+    }
+    for (const [x, y] of [[23,17],[23,18],[22,18],[21,18],[19,18],[18,18]]) cells[y * MAP_WIDTH + x] = 'fertile';
+    cells[17 * MAP_WIDTH + 25] = 'forest';
+    cells[20 * MAP_WIDTH + 17] = 'stone';
+    return cells;
+  }
+  function distance(a, b) { return Math.hypot(a % MAP_WIDTH - b % MAP_WIDTH, Math.floor(a / MAP_WIDTH) - Math.floor(b / MAP_WIDTH)); }
+  function inReach(state, tile) { return state.tiles.some((type, index) => type && distance(tile, index) <= 6); }
+  function availableTile(state, type) { return state.tiles.findIndex((value, index) => !value && !buildReason(state, type, index)); }
+  function projectSpec(state, project = state.project) {
+    if (!project) return null;
+    if (project.type !== 'clear') return BUILDINGS[project.type];
+    const forest = state.terrain[project.tile] === 'forest';
+    return { name: forest ? '清理树林' : '清理石矿', work: forest ? 2 : 3, cost: {}, description: forest ? '腾出草地，获得 4 木材' : '腾出草地，获得 3 石料' };
+  }
   const DAYS = 20;
   const JOBS = ['food', 'wood', 'stone', 'build'];
   const BUILDINGS = {
-    house: { name: '木屋', cost: { wood: 8, stone: 3 }, work: 2, limit: 4, description: '增加 3 个居住位置', icon: 'house' },
-    farm: { name: '农圃', cost: { wood: 10, stone: 4 }, work: 3, limit: 2, description: '每名采食者每天额外产出 1 食物', icon: 'farm' },
-    warehouse: { name: '仓库', cost: { wood: 12, stone: 6 }, work: 3, limit: 2, description: '所有资源的储量上限增加 50', icon: 'warehouse' }
+    house: { name: '木屋', cost: { wood: 8, stone: 3 }, work: 2, limit: 20, description: '增加 3 个居住位置', icon: 'house' },
+    farm: { name: '农圃', cost: { wood: 10, stone: 4 }, work: 3, limit: 8, description: '每名采食者每天额外产出 1 食物', icon: 'farm' },
+    warehouse: { name: '仓库', cost: { wood: 12, stone: 6 }, work: 3, limit: 6, description: '所有资源的储量上限增加 50', icon: 'warehouse' }
   };
   const known = type => typeof type === 'string' && Object.prototype.hasOwnProperty.call(BUILDINGS, type);
   const clone = value => JSON.parse(JSON.stringify(value));
   function fresh() {
-    const tiles = Array(24).fill(null);
-    tiles[8] = 'camp';
+    const tiles = Array(MAP_WIDTH * MAP_HEIGHT).fill(null);
+    tiles[CAMP] = 'camp';
     return { version: VERSION, day: 0, population: 5, peakPopulation: 5,
       resources: { food: 18, wood: 10, stone: 6 }, jobs: { food: 2, wood: 1, stone: 1, build: 1 },
-      tiles, project: null, hunger: 0, phase: 'playing', endless: false,
+      tiles, terrain: terrainMap(), project: null, hunger: 0, phase: 'playing', endless: false,
       log: [{ day: 0, text: '五位开拓者带着补给来到河谷。先建一座木屋，为后来的人留个位置。', tone: 'info' }] };
   }
   function count(state, type) { return state.tiles.filter(tile => tile === type).length; }
@@ -52,6 +80,11 @@
     if (!known(type)) return '未知建筑';
     if (!Number.isInteger(tile) || tile < 0 || tile >= state.tiles.length || state.tiles[tile]) return '请先选择一块空地';
     if (state.project) return '请先完成当前工地';
+    if (!inReach(state, tile)) return '距离村落太远，请沿建筑逐步扩建';
+    if (state.terrain[tile] === 'water') return '河流不能直接建造';
+    if (state.terrain[tile] === 'hill') return '山地不能直接建造';
+    if (['forest', 'stone'].includes(state.terrain[tile])) return '先清理地块，再建造';
+    if (type === 'farm' && state.terrain[tile] !== 'fertile') return '农圃需要肥沃土地';
     const spec = BUILDINGS[type];
     if (count(state, type) >= spec.limit) return '已达到该建筑的数量上限';
     if (Object.entries(spec.cost).some(([key, amount]) => state.resources[key] < amount)) return '木材或石料不足';
@@ -68,10 +101,10 @@
   }
   function cancelBuild(state) {
     if (!state.project || state.phase !== 'playing') return false;
-    const spec = BUILDINGS[state.project.type];
+    const spec = projectSpec(state);
     const limit = storage(state);
     for (const [key, amount] of Object.entries(spec.cost)) state.resources[key] = Math.min(limit, state.resources[key] + amount);
-    log(state, `取消${spec.name}，返还建材（受仓储上限限制）。`);
+    log(state, state.project.type === 'clear' ? '取消清理，不消耗也不产出资源。' : `取消${spec.name}，返还建材（受仓储上限限制）。`);
     state.project = null;
     return true;
   }
@@ -99,10 +132,17 @@
     } else state.hunger = 0;
     if (state.project) {
       state.project.progress += production.build;
-      const spec = BUILDINGS[state.project.type];
+      const spec = projectSpec(state);
       if (state.project.progress >= spec.work) {
-        state.tiles[state.project.tile] = state.project.type;
-        log(state, `${spec.name}建成了！${spec.description}。`, 'good');
+        if (state.project.type === 'clear') {
+          const forest = state.terrain[state.project.tile] === 'forest';
+          state.resources[forest ? 'wood' : 'stone'] += forest ? 4 : 3;
+          state.terrain[state.project.tile] = 'grass';
+          log(state, `${spec.name}完成，${spec.description}。`, 'good');
+        } else {
+          state.tiles[state.project.tile] = state.project.type;
+          log(state, `${spec.name}建成了！${spec.description}。`, 'good');
+        }
         state.project = null;
       }
     }
@@ -130,20 +170,37 @@
     }
     return true;
   }
+  function clearReason(state, tile) {
+    if (state.phase !== 'playing') return '本局已经结束';
+    if (!Number.isInteger(tile) || tile < 0 || tile >= state.tiles.length || state.tiles[tile]) return '请选择未建造的地块';
+    if (state.project) return '请先完成当前工地';
+    if (!inReach(state, tile)) return '距离村落太远';
+    if (!['forest','stone'].includes(state.terrain[tile])) return '只有树林和石矿需要清理';
+    return '';
+  }
+  function startClear(state, tile) {
+    const reason = clearReason(state, tile);
+    if (reason) return { ok: false, reason };
+    state.project = { type: 'clear', tile, progress: 0 };
+    log(state, `开始${projectSpec(state).name}，需要建造者施工。`);
+    return { ok: true };
+  }
   function validate(value) {
     if (!value || value.version !== VERSION) throw new Error('存档版本不兼容');
     const integer = (n, min, max) => Number.isInteger(n) && n >= min && n <= max;
-    if (!integer(value.day, 0, 100000) || !integer(value.population, 0, 17) || !integer(value.peakPopulation, value.population, 17)) throw new Error('人口或日期数据无效');
+    if (!integer(value.day, 0, 100000) || !integer(value.population, 0, 65) || !integer(value.peakPopulation, value.population, 65)) throw new Error('人口或日期数据无效');
     if (!['playing', 'won', 'lost'].includes(value.phase) || typeof value.endless !== 'boolean') throw new Error('游戏状态无效');
-    if (!Array.isArray(value.tiles) || value.tiles.length !== 24 || value.tiles[8] !== 'camp' || value.tiles.filter(x => x === 'camp').length !== 1) throw new Error('地图数据无效');
+    if (!Array.isArray(value.tiles) || value.tiles.length !== MAP_WIDTH * MAP_HEIGHT || value.tiles[CAMP] !== 'camp' || value.tiles.filter(x => x === 'camp').length !== 1) throw new Error('地图数据无效');
+    if (!Array.isArray(value.terrain) || value.terrain.length !== MAP_WIDTH * MAP_HEIGHT || value.terrain.some(type => !terrainKnown(type))) throw new Error('地形数据无效');
     if (value.tiles.some(type => type !== null && type !== 'camp' && !known(type))) throw new Error('建筑数据无效');
+    if (value.tiles.some((type, index) => type && (!['grass', 'fertile'].includes(value.terrain[index]) || type === 'farm' && value.terrain[index] !== 'fertile'))) throw new Error('建筑地形不合法');
     for (const type of Object.keys(BUILDINGS)) if (count(value, type) > BUILDINGS[type].limit) throw new Error('建筑数量无效');
     if (!value.jobs || JOBS.some(job => !integer(value.jobs[job], 0, value.population)) || employed(value) > value.population) throw new Error('工作分配无效');
     if (!value.resources || ['food', 'wood', 'stone'].some(key => !integer(value.resources[key], 0, storage(value)))) throw new Error('资源数据无效');
     if (!integer(value.hunger, 0, 1)) throw new Error('饥饿状态无效');
     if (value.project !== null) {
       const p = value.project;
-      if (!p || !known(p.type) || !integer(p.tile, 0, 23) || value.tiles[p.tile] !== null || !integer(p.progress, 0, BUILDINGS[p.type].work - 1) || count(value, p.type) >= BUILDINGS[p.type].limit) throw new Error('工地数据无效');
+      if (!p || !(known(p.type) || p.type === 'clear') || !integer(p.tile, 0, MAP_WIDTH * MAP_HEIGHT - 1) || value.tiles[p.tile] !== null || !inReach(value, p.tile) || !integer(p.progress, 0, projectSpec(value, p).work - 1) || (p.type === 'clear' ? !['forest','stone'].includes(value.terrain[p.tile]) : count(value, p.type) >= BUILDINGS[p.type].limit || !['grass','fertile'].includes(value.terrain[p.tile]) || p.type === 'farm' && value.terrain[p.tile] !== 'fertile')) throw new Error('工地数据无效');
     }
     if (!Array.isArray(value.log) || value.log.length > 50 || value.log.some(item => !item || !integer(item.day, 0, value.day) || typeof item.text !== 'string' || item.text.length > 300 || !['info', 'good', 'warn', 'bad'].includes(item.tone))) throw new Error('日志数据无效');
     if ((value.phase === 'playing' || value.phase === 'won') && value.population === 0) throw new Error('人口与游戏状态矛盾');
@@ -154,7 +211,7 @@
     for (const key of Object.keys(clean)) clean[key] = clone(value[key]);
     return clean;
   }
-  const api = { VERSION, DAYS, JOBS, BUILDINGS, fresh, count, capacity, storage, idle, rates, goals, assign, buildReason, startBuild, cancelBuild, advance, validate, clone };
+  const api = { VERSION, MAP_WIDTH, MAP_HEIGHT, CAMP, TERRAIN_NAMES, terrainMap, inReach, availableTile, projectSpec, clearReason, startClear, DAYS, JOBS, BUILDINGS, fresh, count, capacity, storage, idle, rates, goals, assign, buildReason, startBuild, cancelBuild, advance, validate, clone };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.VillageModel = api;
 })(typeof window !== 'undefined' ? window : globalThis);
