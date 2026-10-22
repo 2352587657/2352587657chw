@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>河谷初生 · 20 天建立一个村落</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="model.js" defer></script>
+  <script src="game.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark" aria-hidden="true">⌂</span><div><h1>河谷初生</h1><p>RIVERDALE · 一个小小的经营实验</p></div></div>
+    <div class="header-right"><span class="version">原型 0.1 · 离线可玩</span><button id="help" class="quiet">玩法说明</button><button id="new-game" class="quiet">重新开始</button></div>
+  </header>
+  <main>
+    <section class="intro-line"><div><span class="eyebrow">从五个人，到一个家</span><h2>让日子，慢慢好起来。</h2><p>分配工作，搭起屋檐。在二十天里，留住十位愿意生活在这里的人。</p></div><div class="day-panel"><span id="day-label">第 1 天</span><small id="day-subtitle">20 天河谷挑战</small><div class="day-track"><div id="challenge-progress"></div></div></div></section>
+    <section id="resources" class="resources" aria-label="村落资源"></section>
+    <div class="layout">
+      <section class="main-column">
+        <section class="card map-card" aria-labelledby="map-heading">
+          <div class="section-head"><div><span class="eyebrow">你的第一座村落</span><h3 id="map-heading">河畔营地</h3></div><div class="legend"><i></i> 空地可建造 <span>·</span> 点击选址</div></div>
+          <div class="map" id="map"><svg class="landscape" viewBox="0 0 900 490" preserveAspectRatio="none" aria-hidden="true"><defs><pattern id="grass" width="62" height="58" patternUnits="userSpaceOnUse"><path d="M14 18l3-6 2 6m28 24l2-5 3 5" fill="none" stroke="#9dae80" stroke-width="1.5" opacity=".5"/></pattern><linearGradient id="land" x2="0" y2="1"><stop stop-color="#dde5c7"/><stop offset="1" stop-color="#c6d5af"/></linearGradient></defs><rect width="900" height="490" fill="url(#land)"/><rect width="900" height="490" fill="url(#grass)"/><path d="M0 90 Q140 50 100 220 T55 490" stroke="#b4d4d4" stroke-width="88" fill="none"/><path d="M0 90 Q140 50 100 220 T55 490" stroke="#7eafb6" stroke-width="60" fill="none"/><path d="M0 82 Q128 54 90 219 T45 490" stroke="#b2d9da" stroke-width="3" stroke-dasharray="20 30" fill="none" opacity=".75"/><path d="M170 490L230 300 510 250 850 30" stroke="#dccb9d" stroke-width="27" fill="none"/><path d="M170 490L230 300 510 250 850 30" stroke="#eadcbc" stroke-width="17" fill="none"/><g fill="#7d9876"><path d="M785 410l35-77 35 77z"/><path d="M813 460l30-66 30 66z"/><path d="M745 454l30-67 30 67z"/><path d="M190 96l27-67 27 67z"/><path d="M157 70l22-55 22 55z"/></g><g stroke="#876e4b" stroke-width="6"><path d="M820 410v18m23 32v17m-68-23v16M217 96v14M179 70v13"/></g><g fill="#a1ac96"><ellipse cx="740" cy="50" rx="20" ry="12"/><ellipse cx="765" cy="71" rx="12" ry="8"/><ellipse cx="183" cy="405" rx="11" ry="8"/></g></svg><div id="lots" class="lots" aria-label="建筑地块"></div><div class="map-caption"><span>河谷 · 初秋</span><span id="map-population">5 位居民</span></div></div>
+          <div class="map-footer"><span id="selection-label">先点击一块空地，再选择下方建筑。</span><span class="soft">营地自带 5 个床位</span></div>
+        </section>
+        <section class="card build-card" aria-labelledby="build-heading"><div class="section-head compact"><div><span class="eyebrow">把蓝图变成生活</span><h3 id="build-heading">建造计划</h3></div><span class="soft">同时施工 1 座</span></div><div id="building-options" class="building-options"></div><div id="project" class="project"></div></section>
+        <section class="card journal-card"><div class="section-head compact"><h3>河谷纪事</h3><span class="soft">最新的消息在最上面</span></div><ol id="journal" class="journal" aria-live="polite"></ol></section>
+      </section>
+      <aside class="side-column">
+        <section class="card time-card"><div class="time-top"><div><span class="eyebrow">日出而作，日落而息</span><h3 id="clock-state">时间已暂停</h3></div><span id="clock-fraction">12s / 天</span></div><div class="time-track"><div id="day-progress"></div></div><div class="time-buttons"><button id="pause" class="primary">开始时间</button><div class="speed-group" role="group" aria-label="时间速度"><button data-speed="1" class="active">1×</button><button data-speed="2">2×</button><button data-speed="4">4×</button></div></div><button id="next-day" class="step-button">推进一天 <span>不用等待，结算一次生产</span></button><small>空格暂停 · 切到其他标签页会自动暂停</small></section>
+        <section class="card work-card"><div class="section-head compact"><div><span class="eyebrow">每一双手，都很重要</span><h3>居民分工</h3></div><span id="idle" class="pill">待分配 0 人</span></div><div id="jobs"></div><div id="advice" class="advice" aria-live="polite"></div></section>
+        <section class="card goal-card"><div class="section-head compact"><div><span class="eyebrow">20 天的小目标</span><h3>让村落站稳脚跟</h3></div><span id="goal-count" class="goal-count">0/5</span></div><div id="goals"></div><p class="arrival-note">每 3 天有旅人路过。有空床、两天储粮且当日不缺粮，便有 1 人加入，并领取 2 份食物。</p></section>
+        <div class="save-tools"><span id="save-state">自动保存在这台设备</span><div><button id="export-save">导出存档</button><button id="import-save">导入存档</button></div><input type="file" id="save-file" accept="application/json,.json" hidden></div>
+      </aside>
+    </div>
+    <footer>河谷初生 / 0.1 <span>一局小小的选择，试试你想创造的世界。</span></footer>
+  </main>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <div id="modal" class="modal" hidden><section class="modal-sheet" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1"><span class="eyebrow" id="modal-eyebrow">欢迎来到河谷</span><div class="modal-illustration" id="modal-art" aria-hidden="true"></div><h2 id="modal-title">五个人，一片空地。</h2><div id="modal-body"></div><div id="modal-actions" class="modal-actions"></div></section></div>
+</body>
+</html>
