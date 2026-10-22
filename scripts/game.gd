@@ -2,6 +2,8 @@ extends Node3D
 
 const Player = preload("res://scripts/player.gd")
 const World = preload("res://scripts/voxel_world.gd")
+const Items = preload("res://scripts/item_store.gd")
+const DroppedItem = preload("res://scripts/dropped_item.gd")
 const BlockIcon = preload("res://scripts/block_icon.gd")
 var world: World
 var player: Player
@@ -11,7 +13,12 @@ var elapsed := 0.0
 var message_time := 0.0
 var started := false
 var selected_slot := 0
-var slots: Array[int] = [0, 1, 2, 3, 4, 5, 6, 7, 8]
+var bag := Items.new()
+var bag_hotbar_buttons: Array[Button] = []
+var craft_buttons: Array[Button] = []
+var craft_output: Button
+var cursor_visual: Button
+var inventory_hint: Label
 var ui: CanvasLayer
 var menu: Control
 var hud: Control
@@ -23,14 +30,11 @@ var loading: Label
 var play_button: Button
 var selection: MeshInstance3D
 var hotbar_buttons: Array[Button] = []
-var slot_icons: Array[Control] = []
 var inventory_buttons: Array[Button] = []
 var frame_samples: Array[float] = []
 var fps_timer := 0.0
 var ready_announced := false
 var test_mode := false
-var failures := 0
-var checkpoint: Vector3
 
 func material(color: Color) -> StandardMaterial3D:
 	var result := StandardMaterial3D.new()
@@ -187,7 +191,7 @@ func create_ui() -> void:
 	ui.add_child(fps_panel)
 	fps_label = make_label("FPS --  |  -- ms\n正在准备地图…", 17)
 	fps_panel.add_child(fps_label)
-	var help := make_label("WASD 移动 · 空格 跳跃 · 左键 挖掘 · 右键 放置\n1–9 / 滚轮 切换 · B 背包 · E 交谈 · Esc 菜单", 16)
+	var help := make_label("WASD 移动 · 空格 跳跃 · 左键 采集/挖掘 · 右键 放置\n1–9 / 滚轮 切换 · B 背包 · Q 丢弃 · E 交谈 · Esc 菜单", 16)
 	help.position = Vector2(24, 94)
 	hud.add_child(help)
 	var crosshair := make_label("+", 28)
@@ -204,31 +208,17 @@ func create_ui() -> void:
 	bar.add_theme_constant_override("separation", 5)
 	bar_panel.add_child(bar)
 	for i in range(9):
-		var button := Button.new()
-		button.custom_minimum_size = Vector2(76, 74)
-		button.focus_mode = Control.FOCUS_NONE
+		var button := make_item_button(Vector2(76, 74))
 		button.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		button.add_theme_stylebox_override("normal", panel_style(Color("25363b")))
 		bar.add_child(button)
-		var icon := BlockIcon.new()
-		icon.position = Vector2(21, 7)
-		icon.size = Vector2(36, 36)
-		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		button.add_child(icon)
-		var label := make_label("", 12)
-		label.name = "Caption"
-		label.position = Vector2(5, 48)
-		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		button.add_child(label)
 		hotbar_buttons.append(button)
-		slot_icons.append(icon)
 	message = make_label("", 20)
 	message.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
 	message.position = Vector2(-360, -145)
 	hud.add_child(message)
 	create_menu()
 	create_inventory()
-	update_hotbar()
+	refresh_inventory()
 	hud.hide()
 
 func create_menu() -> void:
@@ -244,7 +234,7 @@ func create_menu() -> void:
 	column.add_theme_constant_override("separation", 22)
 	menu.add_child(column)
 	column.add_child(make_label("方 野 / BLOCKLANDS", 48))
-	column.add_child(make_label("河谷探索 · 自由建造\n原型 0.2 / 128 × 128 / 世界种子 42817", 22))
+	column.add_child(make_label("远古生存 · 采集与搓绳\n原型 0.3 / 128 × 128 / 世界种子 42817", 22))
 	play_button = Button.new()
 	play_button.text = "正在准备出生点…"
 	play_button.disabled = true
@@ -257,80 +247,214 @@ func create_menu() -> void:
 	column.add_child(quit)
 	loading = make_label("正在后台生成地形数据…", 16)
 	column.add_child(loading)
-	column.add_child(make_label("自由建造：材料无限。退出后本次地图改动不会保存。", 16))
+	column.add_child(make_label("空手开局 · 堆叠上限 9 · 退出后进度暂不保存。", 16))
 
 func create_inventory() -> void:
 	inventory = Control.new()
 	inventory.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	ui.add_child(inventory)
 	var shade := ColorRect.new()
-	shade.color = Color(0.015, 0.03, 0.04, 0.78)
+	shade.color = Color(0.015, 0.03, 0.04, 0.82)
 	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	inventory.add_child(shade)
 	var panel := PanelContainer.new()
 	panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	panel.position = Vector2(-305, -235)
-	panel.custom_minimum_size = Vector2(610, 470)
+	panel.position = Vector2(-402, -323)
+	panel.custom_minimum_size = Vector2(804, 646)
 	panel.add_theme_stylebox_override("panel", panel_style(Color("14252d"), Color("7a9c96"), 2))
 	inventory.add_child(panel)
 	var column := VBoxContainer.new()
-	column.add_theme_constant_override("separation", 14)
+	column.add_theme_constant_override("separation", 7)
 	panel.add_child(column)
-	column.add_child(make_label("背包 / 方块目录", 30))
-	column.add_child(make_label("无限材料 · 点击方块放入当前快捷格\n数字 1–9 可选择要替换的快捷格", 18))
+	column.add_child(make_label("行囊 / 徒手制作", 27))
+	column.add_child(make_label("左键：拿起 / 放下 / 合并    右键：取一半 / 放 1 个\nQ：丢 1 个    Ctrl+Q：丢整叠    每格最多 9 个", 15))
+	var craft_row := HBoxContainer.new()
+	craft_row.add_theme_constant_override("separation", 12)
+	column.add_child(craft_row)
+	for i in range(2):
+		var button := make_item_button(Vector2(76, 65))
+		connect_slot(button, "craft", i)
+		craft_buttons.append(button)
+		craft_row.add_child(button)
+	craft_row.add_child(make_label(" → ", 28))
+	craft_output = make_item_button(Vector2(88, 65))
+	craft_output.pressed.connect(craft_rope)
+	craft_row.add_child(craft_output)
+	craft_row.add_child(make_label("手工配方：植物纤维 ×2 → 粗绳 ×1\n材料可放一格或分两格，点击成品制作\n成品优先入包，放不下才掉到地上", 15))
+	column.add_child(make_label("背包 · 27 格", 17))
 	var grid := GridContainer.new()
-	grid.columns = 3
-	grid.add_theme_constant_override("h_separation", 10)
-	grid.add_theme_constant_override("v_separation", 10)
+	grid.columns = 9
+	grid.add_theme_constant_override("h_separation", 5)
+	grid.add_theme_constant_override("v_separation", 5)
 	column.add_child(grid)
-	for kind in range(World.NAMES.size()):
-		var button := Button.new()
-		button.custom_minimum_size = Vector2(185, 74)
-		button.text = "      " + World.NAMES[kind] + "  ∞"
-		button.focus_mode = Control.FOCUS_NONE
-		button.add_theme_stylebox_override("normal", panel_style(Color("263c44")))
-		var icon := BlockIcon.new()
-		icon.color = World.COLORS[kind]
-		icon.grass = kind == 0
-		icon.position = Vector2(10, 17)
-		icon.size = Vector2(37, 37)
-		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		button.add_child(icon)
-		button.pressed.connect(assign_slot.bind(kind))
+	for index in range(9, Items.SLOT_COUNT):
+		var button := make_item_button(Vector2(76, 58))
+		connect_slot(button, "storage", index)
 		grid.add_child(button)
 		inventory_buttons.append(button)
+	column.add_child(make_label("快捷栏 · 9 格（数字 1–9 选择当前格）", 17))
+	var bar := HBoxContainer.new()
+	bar.add_theme_constant_override("separation", 5)
+	column.add_child(bar)
+	for i in range(9):
+		var button := make_item_button(Vector2(76, 58))
+		connect_slot(button, "storage", i)
+		bar.add_child(button)
+		bag_hotbar_buttons.append(button)
+	inventory_hint = make_label("开局没有物品：左键采集碎石、枯枝、草与浅黄色纤维植物。", 15)
+	column.add_child(inventory_hint)
 	var close := Button.new()
-	close.text = "返回游戏  [ B / Esc ]"
-	close.custom_minimum_size.y = 44
+	close.text = "返回游戏 [ B / Esc ] · 手上与手工区材料会自动收回"
+	close.custom_minimum_size.y = 34
+	close.focus_mode = Control.FOCUS_NONE
 	close.pressed.connect(func(): toggle_inventory(false))
 	column.add_child(close)
 	inventory.hide()
+	cursor_visual = make_item_button(Vector2(76, 74))
+	cursor_visual.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ui.add_child(cursor_visual)
+	cursor_visual.hide()
 
-func update_hotbar() -> void:
+func make_item_button(dimensions: Vector2) -> Button:
+	var button := Button.new()
+	button.custom_minimum_size = dimensions
+	button.focus_mode = Control.FOCUS_NONE
+	button.add_theme_stylebox_override("normal", panel_style(Color("25363b")))
+	var icon := BlockIcon.new()
+	icon.name = "Icon"
+	icon.position = Vector2(20, 3)
+	icon.size = Vector2(34, 34) if dimensions.y >= 65 else Vector2(29, 29)
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	button.add_child(icon)
+	var label := make_label("", 11)
+	label.name = "Caption"
+	label.position = Vector2(3, dimensions.y - 23)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	button.add_child(label)
+	var count := make_label("", 16)
+	count.name = "Count"
+	count.position = Vector2(dimensions.x - 18, 2)
+	count.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	button.add_child(count)
+	return button
+
+func connect_slot(button: Button, section: String, index: int) -> void:
+	button.set_meta("section", section)
+	button.set_meta("slot_index", index)
+	button.gui_input.connect(slot_input.bind(section, index))
+
+func slot_input(event: InputEvent, section: String, index: int) -> void:
+	if not inventory.visible: return
+	if event is InputEventMouseButton and event.pressed and event.button_index in [MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT]:
+		bag.click(section, index, event.button_index == MOUSE_BUTTON_RIGHT)
+		refresh_inventory()
+		get_viewport().set_input_as_handled()
+
+func render_item(button: Button, cell: Dictionary, prefix := "", selected := false) -> void:
+	var occupied: bool = cell.count > 0
+	var icon := button.get_node("Icon") as Control
+	icon.visible = occupied
+	if occupied:
+		icon.kind = cell.kind
+		icon.color = Items.COLORS[cell.kind]
+		icon.grass = cell.kind == 0
+		icon.queue_redraw()
+	var short_name := "空" if not occupied else str(Items.NAMES[cell.kind]).replace("方块", "").replace("植物", "")
+	button.get_node("Caption").text = prefix + short_name
+	button.get_node("Count").text = str(cell.count) if occupied else ""
+	button.tooltip_text = "%s ×%d / %d" % [Items.NAMES[cell.kind], cell.count, Items.MAX_STACK] if occupied else "空格"
+	button.add_theme_stylebox_override("normal", panel_style(Color("3b514c") if selected else Color("25363b"), Color("f3d38a") if selected else Color("40545b"), 3 if selected else 1))
+
+func refresh_inventory() -> void:
 	for i in range(9):
-		var kind := slots[i]
-		var button := hotbar_buttons[i]
-		button.get_node("Caption").text = str(i + 1) + " " + World.NAMES[kind]
-		button.add_theme_stylebox_override("normal", panel_style(Color("3b514c") if i == selected_slot else Color("25363b"), Color("f3d38a") if i == selected_slot else Color("40545b"), 3 if i == selected_slot else 1))
-		slot_icons[i].color = World.COLORS[kind]
-		slot_icons[i].grass = kind == 0
-		slot_icons[i].queue_redraw()
-	status.text = "当前：" + World.NAMES[slots[selected_slot]] + "  |  快捷格 " + str(selected_slot + 1) + "  |  材料 ∞"
-
-func assign_slot(kind: int) -> void:
-	slots[selected_slot] = kind
-	update_hotbar()
+		render_item(hotbar_buttons[i], bag.storage[i], str(i + 1) + " ", i == selected_slot)
+		render_item(bag_hotbar_buttons[i], bag.storage[i], str(i + 1) + " ", i == selected_slot)
+	for i in range(inventory_buttons.size()): render_item(inventory_buttons[i], bag.storage[i + 9])
+	for i in range(2): render_item(craft_buttons[i], bag.craft[i], str(i + 1) + " ")
+	var recipe := bag.can_craft()
+	render_item(craft_output, Items.stack(Items.ROPE, 1) if recipe else Items.empty())
+	craft_output.disabled = not recipe
+	craft_output.tooltip_text = "点击：消耗 2 份植物纤维，制作 1 根粗绳" if recipe else "需要 2 份植物纤维"
+	render_item(cursor_visual, bag.cursor)
+	cursor_visual.visible = inventory.visible and bag.cursor.count > 0
+	var cell := bag.storage[selected_slot]
+	status.text = "当前：空手" if cell.count == 0 else "当前：%s ×%d" % [Items.NAMES[cell.kind], cell.count]
+	status.text += "  |  快捷格 " + str(selected_slot + 1)
 
 func choose_slot(slot: int) -> void:
 	selected_slot = posmod(slot, 9)
-	update_hotbar()
+	refresh_inventory()
+
+func return_held_items() -> void:
+	var held := bag.cursor.duplicate()
+	bag.cursor = Items.empty()
+	var cells: Array[Dictionary] = [held, bag.craft[0].duplicate(), bag.craft[1].duplicate()]
+	bag.craft[0] = Items.empty()
+	bag.craft[1] = Items.empty()
+	for cell in cells:
+		if cell.count > 0: receive_item(cell.kind, cell.count)
 
 func toggle_inventory(opening: bool) -> void:
 	if not started or menu.visible: return
+	if not opening: return_held_items()
 	inventory.visible = opening
 	player.active = not opening
 	selection.visible = false
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if opening else Input.MOUSE_MODE_CAPTURED
+	refresh_inventory()
+
+func notice(text: String) -> void:
+	message.text = text
+	message_time = 3.0
+	inventory_hint.text = text
+
+func receive_item(kind: int, amount: int) -> void:
+	var remainder := bag.add(kind, amount)
+	if remainder > 0:
+		spawn_drop(kind, remainder)
+		notice("背包已满，" + Items.NAMES[kind] + " ×" + str(remainder) + " 掉在附近")
+	else:
+		notice("获得 " + Items.NAMES[kind] + " ×" + str(amount))
+	refresh_inventory()
+
+func craft_rope() -> void:
+	if not inventory.visible or not bag.craft_once(): return
+	receive_item(Items.ROPE, 1)
+	refresh_inventory()
+
+func spawn_drop(kind: int, amount: int) -> void:
+	var direction := -player.camera.global_transform.basis.z
+	var at := player.position + Vector3.UP * 1.2 + direction * 0.65
+	if world.get_kind(Vector3i(at.floor())) >= 0 or not world.position_ready(at): at = player.position + Vector3.UP * 0.9
+	while amount > 0:
+		var drop := DroppedItem.new()
+		drop.kind = kind
+		drop.count = mini(Items.MAX_STACK, amount)
+		drop.position = at
+		drop.velocity = direction * 2.5 + Vector3.UP * 1.8
+		add_child(drop)
+		amount -= drop.count
+
+func drop_item(section: String, index: int, entire: bool) -> void:
+	var cell := bag.extract(section, index, entire)
+	if cell.count == 0: return
+	spawn_drop(cell.kind, cell.count)
+	notice("丢弃 " + Items.NAMES[cell.kind] + " ×" + str(cell.count))
+	refresh_inventory()
+
+func _input(event: InputEvent) -> void:
+	if not (event is InputEventKey) or not event.pressed or event.echo: return
+	if event.keycode != KEY_Q or not started or menu.visible: return
+	if inventory.visible:
+		if bag.cursor.count > 0:
+			drop_item("cursor", 0, event.ctrl_pressed)
+		else:
+			var hovered := get_viewport().gui_get_hovered_control()
+			while hovered != null and not hovered.has_meta("section"): hovered = hovered.get_parent_control()
+			if hovered != null: drop_item(hovered.get_meta("section"), hovered.get_meta("slot_index"), event.ctrl_pressed)
+	else:
+		drop_item("storage", selected_slot, event.ctrl_pressed)
+	get_viewport().set_input_as_handled()
 
 func start_game() -> void:
 	if not world.spawn_ready(): return
@@ -342,7 +466,7 @@ func start_game() -> void:
 	hud.show()
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
-func target() -> Dictionary:
+func voxel_target() -> Dictionary:
 	# DDA traverses voxel data directly, so targeting updates before asynchronous collision rebuilds.
 	var origin := player.camera.global_position
 	var direction := -player.camera.global_transform.basis.z.normalized()
@@ -362,7 +486,7 @@ func target() -> Dictionary:
 		if world.get_kind(cell) >= 0:
 			var query := PhysicsRayQueryParameters3D.create(origin, origin + direction * distance, 2)
 			if distance > 0 and not get_world_3d().direct_space_state.intersect_ray(query).is_empty(): return {}
-			return {"cell": cell, "normal": normal}
+			return {"cell": cell, "normal": normal, "distance": distance}
 		var axis := 0
 		if t_max.y < t_max.x: axis = 1
 		if t_max.z < t_max[axis]: axis = 2
@@ -373,13 +497,44 @@ func target() -> Dictionary:
 		normal[axis] = -step[axis]
 	return {}
 
+func target() -> Dictionary:
+	var block := voxel_target()
+	var distance: float = block.distance if not block.is_empty() else 6.0
+	var resource := world.resource_target(player.camera.global_position, -player.camera.global_transform.basis.z, distance)
+	if not resource.is_empty():
+		var query := PhysicsRayQueryParameters3D.create(player.camera.global_position, resource.at, 2)
+		if get_world_3d().direct_space_state.intersect_ray(query).is_empty(): return resource
+	return block
+
+func gather(cell: Vector3i) -> bool:
+	var kind := world.take_resource(cell)
+	if kind < 0: return false
+	receive_item(kind, 1)
+	return true
+
+func mine(cell: Vector3i) -> bool:
+	var kind := world.get_kind(cell)
+	if kind < 0: return false
+	# Collect a plant/stone above the mined support rather than silently deleting it.
+	gather(cell)
+	if not world.set_block(cell, -1): return false
+	receive_item(kind, 1)
+	return true
+
 func place_block(cell: Vector3i) -> bool:
+	var held := bag.storage[selected_slot]
+	if held.count <= 0 or held.kind >= World.NAMES.size():
+		notice("当前物品不能放成方块，请先挖掘并选择方块")
+		return false
 	if world.get_kind(cell) >= 0: return false
 	var player_box := AABB(player.position + Vector3(-0.35, 0, -0.35), Vector3(0.7, 1.8, 0.7))
 	var npc_box := AABB(npc.position + Vector3(-0.4, 0, -0.4), Vector3(0.8, 1.9, 0.8))
 	var block_box := AABB(Vector3(cell), Vector3.ONE)
 	if block_box.intersects(player_box) or block_box.intersects(npc_box): return false
-	return world.set_block(cell, slots[selected_slot])
+	if not world.set_block(cell, held.kind): return false
+	bag.extract("storage", selected_slot, false)
+	refresh_inventory()
+	return true
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
@@ -397,8 +552,11 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		if started and not menu.visible and event.keycode >= KEY_1 and event.keycode <= KEY_9: choose_slot(event.keycode - KEY_1)
 		if event.keycode == KEY_E and player.active and player.position.distance_to(npc.position) < 4:
-			message.text = "向导：按 B 打开背包，滚轮选择材料。去河对岸看看吧！"
+			message.text = "向导：采浅黄色纤维植物，按 B，用两份纤维搓一根粗绳。"
 			message_time = 6
+		elif event.keycode == KEY_E and player.active:
+			var hit := target()
+			if hit.has("resource"): gather(hit.cell)
 	if not player.active or menu.visible or inventory.visible: return
 	if event is InputEventMouseButton and event.pressed:
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
@@ -410,10 +568,16 @@ func _unhandled_input(event: InputEvent) -> void:
 		var hit := target()
 		if hit.is_empty(): return
 		var cell: Vector3i = hit.cell
-		if event.button_index == MOUSE_BUTTON_LEFT: world.set_block(cell, -1)
-		if event.button_index == MOUSE_BUTTON_RIGHT: place_block(cell + hit.normal)
+		if event.button_index == MOUSE_BUTTON_LEFT:
+			if hit.has("resource"): gather(cell)
+			else: mine(cell)
+		if event.button_index == MOUSE_BUTTON_RIGHT and not hit.has("resource"): place_block(cell + hit.normal)
 
 func _process(delta: float) -> void:
+	if inventory.visible and bag.cursor.count > 0:
+		cursor_visual.position = get_viewport().get_mouse_position() + Vector2(14, 14)
+		cursor_visual.position.x = minf(cursor_visual.position.x, 1190)
+		cursor_visual.position.y = minf(cursor_visual.position.y, 630)
 	frame_samples.append(delta * 1000)
 	if frame_samples.size() > 120: frame_samples.pop_front()
 	fps_timer += delta
@@ -461,12 +625,10 @@ func _physics_process(delta: float) -> void:
 		if absf(player.position.x) > 62 or absf(player.position.z) > 62: message.text = "已到达本次地图边界"
 	var hit := target()
 	selection.visible = not hit.is_empty()
-	if selection.visible: selection.position = Vector3(hit.cell) + Vector3.ONE * 0.5
-
-func check(condition: bool, description: String) -> void:
-	if not condition:
-		failures += 1
-		push_error("CHECK FAILED: " + description)
+	if selection.visible:
+		selection.position = hit.at if hit.has("resource") else Vector3(hit.cell) + Vector3.ONE * 0.5
+		selection.scale = hit.size if hit.has("resource") else Vector3.ONE
+		if message_time <= 0 and hit.has("resource"): message.text = "左键采集：" + Items.NAMES[hit.kind]
 
 func key_event(code: Key) -> void:
 	var key := InputEventKey.new()
@@ -474,95 +636,13 @@ func key_event(code: Key) -> void:
 	key.pressed = true
 	_unhandled_input(key)
 
-func wait_idle(limit := 3000) -> void:
+func wait_idle(limit := 3000) -> bool:
 	for frame in range(limit):
 		await get_tree().process_frame
-		if world.initialized and world.pending.is_empty() and not world.worker.is_started(): return
-	check(false, "chunk queue timed out")
+		if world.initialized and world.pending.is_empty() and not world.worker.is_started(): return true
+	push_error("Chunk queue timed out")
+	return false
 
 func smoke_test() -> void:
-	var deadline := Time.get_ticks_msec() + 90000
-	while not ready_announced:
-		await get_tree().process_frame
-		if Time.get_ticks_msec() > deadline:
-			check(false, "spawn loading timed out")
-			get_tree().quit(1)
-			return
-	start_game()
-	check(world.data.size() == 64, "128x128 map contains 64 chunks")
-	# Two touching identical cubes become six rectangles, with no internal faces.
-	var padded := PackedByteArray()
-	padded.resize(18 * 18 * (World.HEIGHT + 2))
-	padded[(2 * 18 + 2) * (World.HEIGHT + 2) + 2] = 3
-	padded[(3 * 18 + 2) * (World.HEIGHT + 2) + 2] = 3
-	var greedy := World._mesh_chunk(padded)
-	check(greedy.quads == 6, "greedy merges neighboring cubes into six exterior faces")
-	check(world.position_ready(player.position), "spawn collisions ready")
-	check(hotbar_buttons.size() == 9, "nine visible slots")
-	key_event(KEY_9)
-	check(selected_slot == 8, "number-key slot selection")
-	var wheel := InputEventMouseButton.new()
-	wheel.button_index = MOUSE_BUTTON_WHEEL_DOWN
-	wheel.pressed = true
-	_unhandled_input(wheel)
-	check(selected_slot == 0, "wheel wraps to first slot")
-	key_event(KEY_B)
-	check(inventory.visible and not player.active, "B opens inventory and freezes player")
-	inventory_buttons[7].pressed.emit()
-	check(slots[0] == 7, "inventory button assigns hotbar item")
-	key_event(KEY_ESCAPE)
-	check(not inventory.visible and player.active and not menu.visible, "Esc closes inventory only")
-	for frame in range(120): await get_tree().physics_frame
-	check(player.is_on_floor(), "player lands on greedy terrain collision")
-	player.camera.rotation.x = -1.4
-	var hit := target()
-	check(not hit.is_empty(), "voxel DDA targets ground")
-	if not hit.is_empty():
-		var cell: Vector3i = hit.cell
-		var click := InputEventMouseButton.new()
-		click.pressed = true
-		click.button_index = MOUSE_BUTTON_LEFT
-		_unhandled_input(click)
-		check(world.get_kind(cell) == -1, "mouse mining changes voxel data immediately")
-		world.set_block(cell, 0)
-	check(not place_block(Vector3i((player.position + Vector3.UP * 0.9).floor())), "body overlap rejected")
-	check(place_block(Vector3i(2, 12, 10)), "construction accepted")
-	check(world.get_kind(Vector3i(2, 12, 10)) == 7, "construction uses selected inventory block")
-	# Boundary edits must dirty exactly the touching chunks, including negative coordinates.
-	var before_a: int = world.revisions.get(Vector2i(0, 0), 0)
-	var before_b: int = world.revisions.get(Vector2i(-1, 0), 0)
-	world.set_block(Vector3i(0, 10, 8), 8)
-	check(world.revisions[Vector2i(0, 0)] == before_a + 1 and world.revisions[Vector2i(-1, 0)] == before_b + 1, "boundary edits invalidate neighboring mesh")
-	await wait_idle()
-	# The neighbor that was edited while a mesh was building must retain the latest revision.
-	world.set_block(Vector3i(0, 10, 8), 6)
-	world.set_block(Vector3i(0, 10, 8), 8)
-	await wait_idle()
-	check(world.get_kind(Vector3i(0, 10, 8)) == 8, "rapid edits keep latest value")
-	# Stream far enough to unload the edited origin, then come back.
-	checkpoint = player.position
-	player.active = false
-	player.position = Vector3(48.5, 30, 48.5)
-	world.follow(player.position)
-	await wait_idle()
-	check(not world.chunks.has(Vector2i(0, 0)), "distant origin scene unloaded")
-	check(world.chunks.size() <= 25, "bounded visible chunk count")
-	check(world.get_kind(Vector3i(0, 10, 8)) == 8, "unloaded chunk edits retained")
-	player.position = checkpoint
-	world.follow(player.position)
-	await wait_idle()
-	check(world.position_ready(player.position), "return collisions restored")
-	check(world.get_kind(Vector3i(0, 10, 8)) == 8, "return preserves modifications")
-	start_game()
-	player.position = npc.position + Vector3.RIGHT
-	key_event(KEY_E)
-	check(message.text.begins_with("向导："), "NPC dialogue")
-	key_event(KEY_ESCAPE)
-	check(menu.visible and not player.active, "pause menu")
-	start_game()
-	check(not menu.visible and player.active, "resume")
-	check(not can_move_to(Vector3(64.2, 6, 0)), "world boundary guarded")
-	print("METRICS: generation %.1f ms, meshes %d, last mesh %.1f ms, last main-thread install %.1f ms, visible chunks %d, scene nodes %d" % [world.generation_ms, world.meshes_built, world.last_mesh_ms, world.last_apply_ms, world.chunks.size(), get_tree().get_node_count()])
-	print("MAIN THREAD: max snapshot %.2f ms, max chunk install %.2f ms" % [world.max_snapshot_ms, world.max_apply_ms])
-	if failures == 0: print("SMOKE PASS: larger map, greedy collision, mining, building, boundary edits, streaming persistence, FPS HUD, hotbar, inventory, NPC, menus")
-	get_tree().quit(1 if failures else 0)
+	var suite = load("res://tests/game_smoke.gd").new()
+	await suite.run(self)

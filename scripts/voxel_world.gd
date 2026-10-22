@@ -13,6 +13,8 @@ const NAMES := ["草地", "泥土", "石头", "木头", "树叶", "沙子", "木
 var data: Dictionary = {}
 var heights: Dictionary = {}
 var decorations: Dictionary = {}
+var collected_resources: Dictionary = {}
+const RESOURCE_ITEMS := [13, 9, 11, 10]
 var chunks: Dictionary = {}
 var revisions: Dictionary = {}
 var pending: Dictionary = {}
@@ -71,6 +73,8 @@ static func _generate_data() -> Dictionary:
 			bytes.resize(SIZE * SIZE * HEIGHT)
 			var grasses := PackedVector3Array()
 			var rocks := PackedVector3Array()
+			var fibers := PackedVector3Array()
+			var branches := PackedVector3Array()
 			for lx in range(SIZE):
 				for lz in range(SIZE):
 					var x := cx * SIZE + lx
@@ -89,11 +93,18 @@ static func _generate_data() -> Dictionary:
 						if y == h: kind = 5 if h <= 1 or distance < 6 else 0
 						bytes[index_of(lx, y, lz)] = kind + 1
 					var hash_value := hash_at(x, z)
-					if h > 1 and Vector2(x - 1, z - 8).length() > 5:
-						if hash_value % 19 == 0: grasses.append(Vector3(x + 0.5, h + 1.25, z + 0.5))
-						elif hash_value % 97 == 0: rocks.append(Vector3(x + 0.5, h + 1.18, z + 0.5))
+					if h > 1:
+						if Vector2i(x, z) in [Vector2i(-2, 6), Vector2i(-1, 5)] or hash_value % 53 == 0:
+							fibers.append(Vector3(x + 0.5, h + 1.45, z + 0.5))
+						elif Vector2i(x, z) == Vector2i(-2, 9) or hash_value % 97 == 0:
+							rocks.append(Vector3(x + 0.5, h + 1.18, z + 0.5))
+						elif Vector2i(x, z) == Vector2i(2, 10) or hash_value % 71 == 0:
+							branches.append(Vector3(x + 0.5, h + 1.1, z + 0.5))
+						elif hash_value % 19 == 0:
+							grasses.append(Vector3(x + 0.5, h + 1.25, z + 0.5))
 			storage[key] = bytes
-			decor[key] = [grasses, rocks]
+			decor[key] = [grasses, rocks, fibers, branches]
+
 	# Trees write across chunk borders before any mesh is built.
 	for x in range(-HALF + 2, HALF - 2):
 		for z in range(-HALF + 2, HALF - 2):
@@ -358,12 +369,16 @@ func _install_chunk(key: Vector2i, result: Dictionary) -> void:
 func add_decorations(body: Node3D, key: Vector2i) -> void:
 	if not decorations.has(key): return
 	var lists: Array = decorations[key]
-	for type in range(2):
+	var container := Node3D.new()
+	container.name = "Resources"
+	body.add_child(container)
+	for type in range(4):
 		var positions: PackedVector3Array = lists[type]
 		var visible_positions := PackedVector3Array()
 		for at in positions:
 			# A decoration disappears when its supporting block has been mined.
-			if get_kind(Vector3i(floori(at.x), floori(at.y) - 1, floori(at.z))) >= 0: visible_positions.append(at)
+			var cell := support_cell(at)
+			if get_kind(cell) >= 0 and not collected_resources.has(cell): visible_positions.append(at)
 		if visible_positions.is_empty(): continue
 		var multi := MultiMesh.new()
 		multi.transform_format = MultiMesh.TRANSFORM_3D
@@ -371,6 +386,14 @@ func add_decorations(body: Node3D, key: Vector2i) -> void:
 			var grass := PrismMesh.new()
 			grass.size = Vector3(0.35, 0.5, 0.35)
 			multi.mesh = grass
+		elif type == 2:
+			var fiber := PrismMesh.new()
+			fiber.size = Vector3(0.45, 0.9, 0.45)
+			multi.mesh = fiber
+		elif type == 3:
+			var branch := BoxMesh.new()
+			branch.size = Vector3(0.75, 0.12, 0.12)
+			multi.mesh = branch
 		else:
 			var rock := SphereMesh.new()
 			rock.radius = 0.35
@@ -384,9 +407,62 @@ func add_decorations(body: Node3D, key: Vector2i) -> void:
 		var visual := MultiMeshInstance3D.new()
 		visual.multimesh = multi
 		var mat := StandardMaterial3D.new()
-		mat.albedo_color = COLORS[4 if type == 0 else 2]
+		mat.albedo_color = [Color("708451"), Color("9ca8b0"), Color("c2cd77"), Color("916849")][type]
 		visual.material_override = mat
-		body.add_child(visual)
+		container.add_child(visual)
 
 func _exit_tree() -> void:
 	if worker.is_started(): worker.wait_to_finish()
+
+static func support_cell(at: Vector3) -> Vector3i:
+	return Vector3i(floori(at.x), floori(at.y) - 1, floori(at.z))
+
+func resource_at(cell: Vector3i) -> Dictionary:
+	if collected_resources.has(cell) or get_kind(cell) < 0: return {}
+	var key := chunk_at(cell)
+	if not decorations.has(key): return {}
+	for type in range(4):
+		for at: Vector3 in decorations[key][type]:
+			if support_cell(at) == cell: return {"resource": true, "cell": cell, "at": at, "kind": RESOURCE_ITEMS[type]}
+	return {}
+
+func resource_target(origin: Vector3, direction: Vector3, reach: float) -> Dictionary:
+	var end := origin + direction * reach
+	var min_key := chunk_at(Vector3i(Vector3(minf(origin.x, end.x) - 1, 0, minf(origin.z, end.z) - 1).floor()))
+	var max_key := chunk_at(Vector3i(Vector3(maxf(origin.x, end.x) + 1, 0, maxf(origin.z, end.z) + 1).floor()))
+	var result := {}
+	var nearest := reach
+	for x in range(min_key.x, max_key.x + 1):
+		for z in range(min_key.y, max_key.y + 1):
+			var key := Vector2i(x, z)
+			if not chunks.has(key) or not decorations.has(key): continue
+			for type in range(4):
+				for at: Vector3 in decorations[key][type]:
+					var cell := support_cell(at)
+					if collected_resources.has(cell) or get_kind(cell) < 0: continue
+					var size := Vector3(0.65, 0.65, 0.65)
+					if type == 2: size = Vector3(0.6, 0.95, 0.6)
+					if type == 3: size = Vector3(0.85, 0.25, 0.35)
+					var point = AABB(at - size * 0.5, size).intersects_segment(origin, end)
+					if point == null: continue
+					var distance: float = origin.distance_to(point)
+					if distance < nearest:
+						nearest = distance
+						result = {"resource": true, "cell": cell, "at": at, "kind": RESOURCE_ITEMS[type], "distance": distance, "size": size}
+	return result
+
+func take_resource(cell: Vector3i) -> int:
+	var info := resource_at(cell)
+	if info.is_empty(): return -1
+	collected_resources[cell] = true
+	call_deferred("refresh_resources", chunk_at(cell))
+	return info.kind
+
+func refresh_resources(key: Vector2i) -> void:
+	if not chunks.has(key): return
+	var body: Node3D = chunks[key]
+	var previous := body.get_node_or_null("Resources")
+	if previous:
+		body.remove_child(previous)
+		previous.queue_free()
+	add_decorations(body, key)
