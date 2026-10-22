@@ -36,6 +36,13 @@ func _physics_process(delta: float) -> void:
 	velocity.x = direction.x * speed
 	velocity.z = direction.z * speed
 	if not is_on_floor(): velocity.y -= 22 * delta
+	var next := position + Vector3(velocity.x, 0, velocity.z) * delta
+	if not get_parent().can_move_to(next):
+		velocity.x = 0
+		velocity.z = 0
+	if not get_parent().can_move_to(position):
+		velocity.y = 0
+		return
 	move_and_slide()
-	if position.y < -16:
+	if position.y < -14:
 		get_parent().respawn()
