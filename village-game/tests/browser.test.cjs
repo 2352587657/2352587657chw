@@ -14,6 +14,9 @@ const url = process.env.GAME_TEST_URL || 'http://127.0.0.1:8765/index.html';
   page.on('request', request => { if (/^https?:/.test(request.url()) && new URL(request.url()).hostname !== '127.0.0.1') external.push(request.url()); });
   const read = () => page.evaluate(() => JSON.parse(localStorage.getItem('riverdale-village-v2')).state);
   await page.goto(url);
+  await page.locator('#world-map[data-art-ready="true"]').waitFor();
+  assert.ok(await page.locator('.building-art').count()>=3,'realistic building icons loaded');
+  assert.equal(await page.locator('.building-art').first().evaluate(el=>getComputedStyle(el).backgroundImage.startsWith('url("data:image/png;base64,')),true,'building-panel atlas is not blocked by CSS variable size limits');
   await context.setOffline(true);
   async function selectTile(tile, target=page) {
     const rect=await target.locator('#minimap').boundingBox();
@@ -64,7 +67,7 @@ const url = process.env.GAME_TEST_URL || 'http://127.0.0.1:8765/index.html';
     if(!s.project) {
       const type=M.capacity(s)<Math.min(10,s.population+2)?'house':!M.count(s,'farm')?'farm':!M.count(s,'warehouse')?'warehouse':M.capacity(s)<10?'house':null;
       if(type) {
-        const tile=M.availableTile(s,type);
+        const tile=Array.from({length:s.tiles.length},(_,i)=>i).sort((a,b)=>Math.hypot(a%M.MAP_WIDTH-M.CAMP%M.MAP_WIDTH,Math.floor(a/M.MAP_WIDTH)-Math.floor(M.CAMP/M.MAP_WIDTH))-Math.hypot(b%M.MAP_WIDTH-M.CAMP%M.MAP_WIDTH,Math.floor(b/M.MAP_WIDTH)-Math.floor(M.CAMP/M.MAP_WIDTH))).find(i=>!M.buildReason(s,type,i))??-1;
         if(tile<0){await page.getByRole('button', { name: '推进一天', exact: false }).click();continue;}
         await selectTile(tile);
         const button=page.locator(`[data-build="${type}"]`);
@@ -80,6 +83,15 @@ const url = process.env.GAME_TEST_URL || 'http://127.0.0.1:8765/index.html';
   await page.screenshot({ path:'/tmp/riverdale-victory.png',fullPage:true });
   await page.getByRole('button',{name:'继续自由经营',exact:true}).click();
   assert.equal((await read()).endless,true);
+  await page.locator('#map-home').click();
+  await page.screenshot({path:'/tmp/riverdale-historical-game.png',fullPage:true});
+  await page.locator('#map-expand').click();
+  await page.screenshot({path:'/tmp/riverdale-historical-expanded.png',fullPage:true});
+  const mini=await page.locator('#minimap').boundingBox();
+  await page.mouse.click(mini.x+(M.CAMP%M.MAP_WIDTH+.5)/M.MAP_WIDTH*mini.width,mini.y+(Math.floor(M.CAMP/M.MAP_WIDTH)+.5)/M.MAP_HEIGHT*mini.height);
+  await page.locator('#map-plus').click();await page.locator('#map-plus').click();
+  await page.locator('#map').screenshot({path:'/tmp/riverdale-historical-village.png'});
+  await page.keyboard.press('Escape');
   const downloadPromise=page.waitForEvent('download');
   await page.getByRole('button',{name:'导出存档',exact:true}).click();
   const download=await downloadPromise;
@@ -157,6 +169,6 @@ const url = process.env.GAME_TEST_URL || 'http://127.0.0.1:8765/index.html';
   timedState=await timed.evaluate(()=>JSON.parse(localStorage.getItem('riverdale-village-v2')).state);
   assert.equal(timedState.day,2,'4x speed advances a day in three seconds');
   assert.deepEqual(errors,[]);
-  console.log('BROWSER PASS: local browser launch, offline gameplay, worker buttons, construction, save/reload, UI-only victory on day '+won.day+', continue, export/import, mobile layout, deadline loss, automatic clock/pause/4x speed, 1280-cell terrain, panning/zoom/minimap, expanding map, clearing and save persistence, grass farms, legacy fertility migration; no script errors or network requests.');
+  console.log('BROWSER PASS: local browser launch, offline gameplay, worker buttons, construction, save/reload, UI-only victory on day '+won.day+', continue, export/import, mobile layout, deadline loss, automatic clock/pause/4x speed, 1280-cell terrain, panning/zoom/minimap, expanding map, clearing and save persistence, grass farms, legacy fertility migration, embedded historical sprites and textures; no script errors or network requests.');
   await browser.close();
 })().catch(error=>{console.error(error);process.exit(1);});

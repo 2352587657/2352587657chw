@@ -7,13 +7,14 @@
   <title>河谷初生 · 20 天建立一个村落</title>
   <link rel="stylesheet" href="style.css">
   <script src="model.js" defer></script>
+  <script src="art.js" defer></script>
   <script src="map-view.js" defer></script>
   <script src="game.js" defer></script>
 </head>
 <body>
   <header class="topbar">
     <div class="brand"><span class="brand-mark" aria-hidden="true">⌂</span><div><h1>河谷初生</h1><p>RIVERDALE · 一个小小的经营实验</p></div></div>
-    <div class="header-right"><span class="version">原型 0.2.1 · 离线可玩</span><button id="help" class="quiet">玩法说明</button><button id="new-game" class="quiet">重新开始</button></div>
+    <div class="header-right"><span class="version">原型 0.3 · 明亮写实风</span><button id="help" class="quiet">玩法说明</button><button id="new-game" class="quiet">重新开始</button></div>
   </header>
   <main>
     <section class="intro-line"><div><span class="eyebrow">从五个人，到一个家</span><h2>让日子，慢慢好起来。</h2><p>分配工作，搭起屋檐。在二十天里，留住十位愿意生活在这里的人。</p></div><div class="day-panel"><span id="day-label">第 1 天</span><small id="day-subtitle">20 天河谷挑战</small><div class="day-track"><div id="challenge-progress"></div></div></div></section>
@@ -35,7 +36,7 @@
         <div class="save-tools"><span id="save-state">自动保存在这台设备</span><div><button id="export-save">导出存档</button><button id="import-save">导入存档</button></div><input type="file" id="save-file" accept="application/json,.json" hidden></div>
       </aside>
     </div>
-    <footer>河谷初生 / 0.2.1 <span>一局小小的选择，试试你想创造的世界。</span></footer>
+    <footer>河谷初生 / 0.3 <span>一局小小的选择，试试你想创造的世界。</span></footer>
   </main>
   <div id="toast" class="toast" role="status" hidden></div>
   <div id="modal" class="modal" hidden><section class="modal-sheet" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1"><span class="eyebrow" id="modal-eyebrow">欢迎来到河谷</span><div class="modal-illustration" id="modal-art" aria-hidden="true"></div><h2 id="modal-title">五个人，一片空地。</h2><div id="modal-body"></div><div id="modal-actions" class="modal-actions"></div></section></div>

@@ -27,6 +27,7 @@
     people: '<circle cx="13" cy="11" r="5" fill="currentColor"/><path d="M4 31v-7c0-8 18-8 18 0v7" fill="currentColor"/><circle cx="27" cy="13" r="4" fill="currentColor" opacity=".5"/><path d="M25 20c8-1 9 5 9 11h-8" fill="currentColor" opacity=".5"/>'
   };
   function icon(name, resource = false) {
+    if(!resource&&window.VillageArt.frames[name])return `<span class="building-art art-${name}" aria-hidden="true"></span>`;
     return `<svg viewBox="0 0 ${resource ? '36 36' : '96 96'}" aria-hidden="true">${art[name] || art.house}</svg>`;
   }
   function toast(text) {
@@ -252,6 +253,10 @@
     }
     requestAnimationFrame(frame);
   }
+  const artStyle=document.createElement('style');
+  // A direct image rule avoids browser limits on multi-megabyte CSS custom properties.
+  artStyle.textContent=`.building-art{background-image:url("${window.VillageArt.sprites}")}`;
+  document.head.appendChild(artStyle);
   render();
   if (saved && state.phase !== 'playing') result(); else welcome(saved);
   if (loadError) toast('旧存档无法读取，已准备新村落；你也可以导入导出的存档');
