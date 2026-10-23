@@ -1,8 +1,8 @@
-# 河谷初生 · 村落经营小游戏 0.2
+# 河谷初生 · 村落经营小游戏 0.2.1
 
 **从五位开拓者起步，在 20 天内建立一个能自给自足的十人村落。**
 
-[下载可直接玩的 ZIP](https://github.com/2352587657/2352587657chw/raw/refs/heads/village-prototype-v0.2/downloads/riverdale-0.2.zip)
+[下载可直接玩的 ZIP](https://github.com/2352587657/2352587657chw/raw/refs/heads/village-prototype-v0.2.1/downloads/riverdale-0.2.1.zip)
 
 下载后右键 ZIP → **全部解压** → 双击 **河谷初生.html**。使用 Edge、Chrome 或 Firefox，不需要安装 Godot 或其他依赖。
 
@@ -12,8 +12,8 @@
 
 - **40 × 32 格地图**，共 1,280 格，约为旧版格数的 53 倍。
 - 支持拖动、滚轮缩放、小地图定位、回营地、全图和展开地图。
-- 草地、肥沃土地、树林、石矿、河流与山地，建造受地形与扩建范围限制。
-- 树林和石矿可以安排清理，农圃需要选在肥沃土地。
+- 草地、树林、石矿、河流与山地，建造受地形与扩建范围限制。
+- 树林和石矿可以安排清理，农圃可直接建在普通草地。
 
 ![地图全貌](village-game/screenshots/overview.png)
 
@@ -36,7 +36,7 @@
 ## 项目位置
 
 - **给玩家的单文件版**：[河谷初生.html](village-game/河谷初生.html)
-- **给玩家的独立压缩包**：[riverdale-0.2.zip](downloads/riverdale-0.2.zip)
+- **给玩家的独立压缩包**：[riverdale-0.2.1.zip](downloads/riverdale-0.2.1.zip)
 - **源代码和开发说明**：[village-game/README.md](village-game/README.md)
 - **验证记录**：[village-game/VALIDATION.md](village-game/VALIDATION.md)
 

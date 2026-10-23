@@ -17,7 +17,7 @@
 <body>
   <header class="topbar">
     <div class="brand"><span class="brand-mark" aria-hidden="true">⌂</span><div><h1>河谷初生</h1><p>RIVERDALE · 一个小小的经营实验</p></div></div>
-    <div class="header-right"><span class="version">原型 0.2 · 离线可玩</span><button id="help" class="quiet">玩法说明</button><button id="new-game" class="quiet">重新开始</button></div>
+    <div class="header-right"><span class="version">原型 0.2.1 · 离线可玩</span><button id="help" class="quiet">玩法说明</button><button id="new-game" class="quiet">重新开始</button></div>
   </header>
   <main>
     <section class="intro-line"><div><span class="eyebrow">从五个人，到一个家</span><h2>让日子，慢慢好起来。</h2><p>分配工作，搭起屋檐。在二十天里，留住十位愿意生活在这里的人。</p></div><div class="day-panel"><span id="day-label">第 1 天</span><small id="day-subtitle">20 天河谷挑战</small><div class="day-track"><div id="challenge-progress"></div></div></div></section>
@@ -39,7 +39,7 @@
         <div class="save-tools"><span id="save-state">自动保存在这台设备</span><div><button id="export-save">导出存档</button><button id="import-save">导入存档</button></div><input type="file" id="save-file" accept="application/json,.json" hidden></div>
       </aside>
     </div>
-    <footer>河谷初生 / 0.2 <span>一局小小的选择，试试你想创造的世界。</span></footer>
+    <footer>河谷初生 / 0.2.1 <span>一局小小的选择，试试你想创造的世界。</span></footer>
   </main>
   <div id="toast" class="toast" role="status" hidden></div>
   <div id="modal" class="modal" hidden><section class="modal-sheet" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1"><span class="eyebrow" id="modal-eyebrow">欢迎来到河谷</span><div class="modal-illustration" id="modal-art" aria-hidden="true"></div><h2 id="modal-title">五个人，一片空地。</h2><div id="modal-body"></div><div id="modal-actions" class="modal-actions"></div></section></div>
@@ -48,7 +48,7 @@
   'use strict';
   const VERSION = 2;
   const MAP_WIDTH = 40, MAP_HEIGHT = 32, CAMP = 16 * MAP_WIDTH + 20;
-  const TERRAIN_NAMES = { grass: '草地', fertile: '肥沃土地', forest: '树林', stone: '石矿', water: '河流', hill: '山地' };
+  const TERRAIN_NAMES = { grass: '草地', forest: '树林', stone: '石矿', water: '河流', hill: '山地' };
   const terrainKnown = type => typeof type === 'string' && Object.prototype.hasOwnProperty.call(TERRAIN_NAMES, type);
   function terrainMap() {
     const cells = [];
@@ -57,11 +57,10 @@
       const river = 8 + Math.sin(y * .19) * 3 + Math.sin(y * .47) * .8;
       const distance = Math.abs(x - river);
       const grove = Math.sin(x * .42 + y * .17) + Math.cos(y * .39 - x * .12);
-      let type = distance < 1.25 ? 'water' : (Math.hypot(x - 35, y - 4) < 4.8 || Math.hypot(x - 3, y - 27) < 3.4) ? 'hill' : grove > .58 ? 'forest' : noise(x, y) > .94 ? 'stone' : distance < 3 || noise(x, y) < .23 ? 'fertile' : 'grass';
+      let type = distance < 1.25 ? 'water' : (Math.hypot(x - 35, y - 4) < 4.8 || Math.hypot(x - 3, y - 27) < 3.4) ? 'hill' : grove > .58 ? 'forest' : noise(x, y) > .94 ? 'stone' : 'grass';
       if (Math.hypot(x - 20, y - 16) < 4) type = 'grass';
       cells.push(type);
     }
-    for (const [x, y] of [[23,17],[23,18],[22,18],[21,18],[19,18],[18,18]]) cells[y * MAP_WIDTH + x] = 'fertile';
     cells[17 * MAP_WIDTH + 25] = 'forest';
     cells[20 * MAP_WIDTH + 17] = 'stone';
     return cells;
@@ -130,7 +129,6 @@
     if (state.terrain[tile] === 'water') return '河流不能直接建造';
     if (state.terrain[tile] === 'hill') return '山地不能直接建造';
     if (['forest', 'stone'].includes(state.terrain[tile])) return '先清理地块，再建造';
-    if (type === 'farm' && state.terrain[tile] !== 'fertile') return '农圃需要肥沃土地';
     const spec = BUILDINGS[type];
     if (count(state, type) >= spec.limit) return '已达到该建筑的数量上限';
     if (Object.entries(spec.cost).some(([key, amount]) => state.resources[key] < amount)) return '木材或石料不足';
@@ -231,22 +229,25 @@
     log(state, `开始${projectSpec(state).name}，需要建造者施工。`);
     return { ok: true };
   }
-  function validate(value) {
-    if (!value || value.version !== VERSION) throw new Error('存档版本不兼容');
+  function validate(input) {
+    if (!input || input.version !== VERSION) throw new Error('存档版本不兼容');
+    const value = clone(input);
+    // 0.2 saves keep their buildings and projects; retired terrain becomes ordinary grass.
+    if (Array.isArray(value.terrain)) value.terrain = value.terrain.map(type => type === 'fertile' ? 'grass' : type);
     const integer = (n, min, max) => Number.isInteger(n) && n >= min && n <= max;
     if (!integer(value.day, 0, 100000) || !integer(value.population, 0, 65) || !integer(value.peakPopulation, value.population, 65)) throw new Error('人口或日期数据无效');
     if (!['playing', 'won', 'lost'].includes(value.phase) || typeof value.endless !== 'boolean') throw new Error('游戏状态无效');
     if (!Array.isArray(value.tiles) || value.tiles.length !== MAP_WIDTH * MAP_HEIGHT || value.tiles[CAMP] !== 'camp' || value.tiles.filter(x => x === 'camp').length !== 1) throw new Error('地图数据无效');
     if (!Array.isArray(value.terrain) || value.terrain.length !== MAP_WIDTH * MAP_HEIGHT || value.terrain.some(type => !terrainKnown(type))) throw new Error('地形数据无效');
     if (value.tiles.some(type => type !== null && type !== 'camp' && !known(type))) throw new Error('建筑数据无效');
-    if (value.tiles.some((type, index) => type && (!['grass', 'fertile'].includes(value.terrain[index]) || type === 'farm' && value.terrain[index] !== 'fertile'))) throw new Error('建筑地形不合法');
+    if (value.tiles.some((type, index) => type && value.terrain[index] !== 'grass')) throw new Error('建筑地形不合法');
     for (const type of Object.keys(BUILDINGS)) if (count(value, type) > BUILDINGS[type].limit) throw new Error('建筑数量无效');
     if (!value.jobs || JOBS.some(job => !integer(value.jobs[job], 0, value.population)) || employed(value) > value.population) throw new Error('工作分配无效');
     if (!value.resources || ['food', 'wood', 'stone'].some(key => !integer(value.resources[key], 0, storage(value)))) throw new Error('资源数据无效');
     if (!integer(value.hunger, 0, 1)) throw new Error('饥饿状态无效');
     if (value.project !== null) {
       const p = value.project;
-      if (!p || !(known(p.type) || p.type === 'clear') || !integer(p.tile, 0, MAP_WIDTH * MAP_HEIGHT - 1) || value.tiles[p.tile] !== null || !inReach(value, p.tile) || !integer(p.progress, 0, projectSpec(value, p).work - 1) || (p.type === 'clear' ? !['forest','stone'].includes(value.terrain[p.tile]) : count(value, p.type) >= BUILDINGS[p.type].limit || !['grass','fertile'].includes(value.terrain[p.tile]) || p.type === 'farm' && value.terrain[p.tile] !== 'fertile')) throw new Error('工地数据无效');
+      if (!p || !(known(p.type) || p.type === 'clear') || !integer(p.tile, 0, MAP_WIDTH * MAP_HEIGHT - 1) || value.tiles[p.tile] !== null || !inReach(value, p.tile) || !integer(p.progress, 0, projectSpec(value, p).work - 1) || (p.type === 'clear' ? !['forest','stone'].includes(value.terrain[p.tile]) : count(value, p.type) >= BUILDINGS[p.type].limit || value.terrain[p.tile] !== 'grass')) throw new Error('工地数据无效');
     }
     if (!Array.isArray(value.log) || value.log.length > 50 || value.log.some(item => !item || !integer(item.day, 0, value.day) || typeof item.text !== 'string' || item.text.length > 300 || !['info', 'good', 'warn', 'bad'].includes(item.tone))) throw new Error('日志数据无效');
     if ((value.phase === 'playing' || value.phase === 'won') && value.population === 0) throw new Error('人口与游戏状态矛盾');
@@ -267,7 +268,7 @@
 (function () {
   'use strict';
   const M = window.VillageModel, TILE = 48;
-  const colors = { grass:'#c4d4a6', fertile:'#d4d9a1', forest:'#91af80', stone:'#b7bea9', water:'#7aaeb8', hill:'#9ba797' };
+  const colors = { grass:'#c4d4a6', forest:'#91af80', stone:'#b7bea9', water:'#7aaeb8', hill:'#9ba797' };
   class VillageMap {
     constructor(host, icon, onSelect) {
       this.host=host; this.onSelect=onSelect; this.state=null; this.selected=M.CAMP+1;
@@ -350,8 +351,6 @@
         c.fillStyle=colors[t];c.fillRect(px,py,TILE+.4,TILE+.4);
         if(t==='water'){
           c.strokeStyle='#b6d8d6';c.lineWidth=1.4;c.beginPath();c.moveTo(px+8,py+17+(x%2)*9);c.quadraticCurveTo(px+20,py+14,px+35,py+18);c.stroke();
-        }else if(t==='fertile'){
-          c.strokeStyle='#b6bb82';c.lineWidth=1;c.beginPath();for(let n=0;n<3;n++){c.moveTo(px+8,py+12+n*12);c.lineTo(px+40,py+12+n*12);}c.stroke();
         }else if(t==='hill'){
           c.fillStyle='#82917f';c.beginPath();c.moveTo(px+3,py+43);c.lineTo(px+23,py+5);c.lineTo(px+46,py+43);c.fill();c.fillStyle='#bac3b0';c.beginPath();c.moveTo(px+23,py+5);c.lineTo(px+34,py+25);c.lineTo(px+23,py+21);c.lineTo(px+15,py+24);c.fill();
         }else if(t==='stone'){
@@ -485,7 +484,7 @@
   }
   function welcome(isSaved) {
     showModal('welcome', isSaved ? '河谷，还在等你。' : '五个人，一片空地。',
-      `<p>${isSaved ? '已找回这台设备上的村落。回来后时间保持暂停，准备好再继续。' : '这里没有复杂的操作，也没有需要追赶的敌人。先照顾好五位居民，再让更多人把这里当成家。'}</p><ul><li>采食、伐木、采石、建造，四种工作由你分配。</li><li>拖动和缩放地图选址。农圃建在肥沃土地，树林与石矿需先清理。</li><li>20 天内：10 位居民、有足够床位、农圃、仓库，且食物能够自给。</li></ul><p>一开始就能暂停慢慢想，也能点击“推进一天”结算。进度自动保存在浏览器；离线不会推进时间。</p>`,
+      `<p>${isSaved ? '已找回这台设备上的村落。回来后时间保持暂停，准备好再继续。' : '这里没有复杂的操作，也没有需要追赶的敌人。先照顾好五位居民，再让更多人把这里当成家。'}</p><ul><li>采食、伐木、采石、建造，四种工作由你分配。</li><li>拖动和缩放地图选址。农圃可建在普通草地，树林与石矿需先清理。</li><li>20 天内：10 位居民、有足够床位、农圃、仓库，且食物能够自给。</li></ul><p>一开始就能暂停慢慢想，也能点击“推进一天”结算。进度自动保存在浏览器；离线不会推进时间。</p>`,
       [{ label: isSaved ? '继续这段生活' : '开拓这片土地', primary: true, run: begin }]);
   }
   function result() {
@@ -502,7 +501,7 @@
     if (state.project && state.jobs.build === 0) return '工地正在等待建造者。减少其他岗位人数，再为建造分配至少 1 人。';
     if (M.idle(state) > 0) return `有 ${M.idle(state)} 位居民尚未分配工作。点击岗位旁的 ＋，让每双手都有事情做。`;
     if (M.capacity(state) <= state.population) return '先建一座木屋。没有空床位，路过的旅人就不会加入村落。';
-    if (!M.count(state, 'farm')) return '接下来可以建农圃（在浅黄色肥沃土地上）：同样的采食人数，可以养活更多居民。';
+    if (!M.count(state, 'farm')) return '接下来可以建农圃：同样的采食人数，可以养活更多居民。';
     if (!M.count(state, 'warehouse')) return '建一座仓库，把资源上限从 30 提高到 80，也完成一个发展目标。';
     if (M.capacity(state) < 10) return '再建一座木屋，为 10 位居民提前准备好床位。';
     return '保持食物自给，留足两天储粮，等待每三天一次的旅人到访。';
@@ -608,7 +607,7 @@
   $('pause').addEventListener('click', () => { paused = !paused; renderClock(); });
   $('next-day').addEventListener('click', advance);
   document.querySelectorAll('[data-speed]').forEach(button => button.addEventListener('click', () => { speed = Number(button.dataset.speed); save(); renderClock(); }));
-  $('help').addEventListener('click', () => showModal('help', '先照顾人，再扩建村落。', '<p>食物每天先产出再消耗，每人吃 1 份。每名采食者产出 3 份，每座农圃额外增加 1 份 / 人。农圃必须建在肥沃土地，河流和山地不能直接建造。</p><ul><li>用 − 腾出待分配居民，再用 ＋ 安排新岗位。</li><li>拖动地图、滚轮缩放，小地图快速定位；回到营地或全图按钮帮助找路。点击地块，再选建筑。建造者推进工地与清理。</li><li>木屋增加 3 个床位；仓库为每种资源增加 50 容量。</li><li>旅人每 3 天来一次，需要空床位、两天储粮且当天不缺粮。</li><li>连续两天缺粮，有一位居民离开。没人留下或 20 天未达标，本局失败。</li></ul><p>每日新建成的农圃从次日生效。新居民当日领取 2 份食物，从次日开始正常消耗。胜利需要 10 人、住处、农圃、仓库、两天储粮和不亏损的食物生产。</p>', [{ label: '明白了，返回村落', primary: true, run: hideModal }]));
+  $('help').addEventListener('click', () => showModal('help', '先照顾人，再扩建村落。', '<p>食物每天先产出再消耗，每人吃 1 份。每名采食者产出 3 份，每座农圃额外增加 1 份 / 人。农圃可建在普通草地，河流和山地不能直接建造。</p><ul><li>用 − 腾出待分配居民，再用 ＋ 安排新岗位。</li><li>拖动地图、滚轮缩放，小地图快速定位；回到营地或全图按钮帮助找路。点击地块，再选建筑。建造者推进工地与清理。</li><li>木屋增加 3 个床位；仓库为每种资源增加 50 容量。</li><li>旅人每 3 天来一次，需要空床位、两天储粮且当天不缺粮。</li><li>连续两天缺粮，有一位居民离开。没人留下或 20 天未达标，本局失败。</li></ul><p>每日新建成的农圃从次日生效。新居民当日领取 2 份食物，从次日开始正常消耗。胜利需要 10 人、住处、农圃、仓库、两天储粮和不亏损的食物生产。</p>', [{ label: '明白了，返回村落', primary: true, run: hideModal }]));
   $('new-game').addEventListener('click', () => showModal('restart', '重新开拓这片河谷？', '<p>这会替换当前浏览器存档。想保留这座村落，可以先返回并点击“导出存档”。</p>', [{ label: '返回村落', run: hideModal }, { label: '确认重新开始', primary: true, run: restart }]));
   $('export-save').addEventListener('click', () => {
     const blob = new Blob([JSON.stringify({ state, selected, speed }, null, 2)], { type: 'application/json' });

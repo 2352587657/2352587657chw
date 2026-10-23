@@ -120,7 +120,7 @@ test('water, mountains, forest and distant land reject building without taking r
   const tile=s.terrain.indexOf(t);assert.equal(M.startBuild(s,'house',tile).ok,false);assert.deepEqual(s.resources,before);
  }
  assert.equal(M.startBuild(s,'house',0).ok,false);
- assert.equal(M.startBuild(s,'farm',HOME).ok,false);
+ assert.equal(M.startBuild(s,'farm',HOME).ok,true);
 });
 test('clearing requires workers and produces materials once; cancel creates no resources',()=>{
  const s=M.fresh(),tile=17*M.MAP_WIDTH+25;
@@ -133,6 +133,14 @@ test('clearing requires workers and produces materials once; cancel creates no r
 });
 test('terrain restrictions survive save validation',()=>{
  const s=M.fresh();s.tiles[s.terrain.indexOf('water')]='house';assert.throws(()=>M.validate(s));
- const t=M.fresh();t.tiles[HOME]='farm';assert.throws(()=>M.validate(t));
+ const t=M.fresh();t.tiles[HOME]='farm';assert.equal(M.validate(t).tiles[HOME],'farm');
  const old=M.fresh();old.version=1;assert.throws(()=>M.validate(old));
+});
+
+test('fertility removed and legacy 0.2 farms and projects migrate without mutating saves',()=>{
+ const fresh=M.fresh();assert.equal(fresh.terrain.includes('fertile'),false);assert.equal(M.TERRAIN_NAMES.fertile,undefined);
+ const old=M.fresh();old.terrain[HOME]='fertile';old.tiles[HOME]='farm';
+ const migrated=M.validate(old);assert.equal(migrated.terrain[HOME],'grass');assert.equal(migrated.tiles[HOME],'farm');assert.equal(old.terrain[HOME],'fertile');
+ const project=M.fresh();project.terrain[HOME]='fertile';project.project={type:'farm',tile:HOME,progress:1};
+ const resumed=M.validate(project);assert.equal(resumed.project.progress,1);assert.equal(resumed.terrain[HOME],'grass');
 });

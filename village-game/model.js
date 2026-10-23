@@ -2,7 +2,7 @@
   'use strict';
   const VERSION = 2;
   const MAP_WIDTH = 40, MAP_HEIGHT = 32, CAMP = 16 * MAP_WIDTH + 20;
-  const TERRAIN_NAMES = { grass: '草地', fertile: '肥沃土地', forest: '树林', stone: '石矿', water: '河流', hill: '山地' };
+  const TERRAIN_NAMES = { grass: '草地', forest: '树林', stone: '石矿', water: '河流', hill: '山地' };
   const terrainKnown = type => typeof type === 'string' && Object.prototype.hasOwnProperty.call(TERRAIN_NAMES, type);
   function terrainMap() {
     const cells = [];
@@ -11,11 +11,10 @@
       const river = 8 + Math.sin(y * .19) * 3 + Math.sin(y * .47) * .8;
       const distance = Math.abs(x - river);
       const grove = Math.sin(x * .42 + y * .17) + Math.cos(y * .39 - x * .12);
-      let type = distance < 1.25 ? 'water' : (Math.hypot(x - 35, y - 4) < 4.8 || Math.hypot(x - 3, y - 27) < 3.4) ? 'hill' : grove > .58 ? 'forest' : noise(x, y) > .94 ? 'stone' : distance < 3 || noise(x, y) < .23 ? 'fertile' : 'grass';
+      let type = distance < 1.25 ? 'water' : (Math.hypot(x - 35, y - 4) < 4.8 || Math.hypot(x - 3, y - 27) < 3.4) ? 'hill' : grove > .58 ? 'forest' : noise(x, y) > .94 ? 'stone' : 'grass';
       if (Math.hypot(x - 20, y - 16) < 4) type = 'grass';
       cells.push(type);
     }
-    for (const [x, y] of [[23,17],[23,18],[22,18],[21,18],[19,18],[18,18]]) cells[y * MAP_WIDTH + x] = 'fertile';
     cells[17 * MAP_WIDTH + 25] = 'forest';
     cells[20 * MAP_WIDTH + 17] = 'stone';
     return cells;
@@ -84,7 +83,6 @@
     if (state.terrain[tile] === 'water') return '河流不能直接建造';
     if (state.terrain[tile] === 'hill') return '山地不能直接建造';
     if (['forest', 'stone'].includes(state.terrain[tile])) return '先清理地块，再建造';
-    if (type === 'farm' && state.terrain[tile] !== 'fertile') return '农圃需要肥沃土地';
     const spec = BUILDINGS[type];
     if (count(state, type) >= spec.limit) return '已达到该建筑的数量上限';
     if (Object.entries(spec.cost).some(([key, amount]) => state.resources[key] < amount)) return '木材或石料不足';
@@ -185,22 +183,25 @@
     log(state, `开始${projectSpec(state).name}，需要建造者施工。`);
     return { ok: true };
   }
-  function validate(value) {
-    if (!value || value.version !== VERSION) throw new Error('存档版本不兼容');
+  function validate(input) {
+    if (!input || input.version !== VERSION) throw new Error('存档版本不兼容');
+    const value = clone(input);
+    // 0.2 saves keep their buildings and projects; retired terrain becomes ordinary grass.
+    if (Array.isArray(value.terrain)) value.terrain = value.terrain.map(type => type === 'fertile' ? 'grass' : type);
     const integer = (n, min, max) => Number.isInteger(n) && n >= min && n <= max;
     if (!integer(value.day, 0, 100000) || !integer(value.population, 0, 65) || !integer(value.peakPopulation, value.population, 65)) throw new Error('人口或日期数据无效');
     if (!['playing', 'won', 'lost'].includes(value.phase) || typeof value.endless !== 'boolean') throw new Error('游戏状态无效');
     if (!Array.isArray(value.tiles) || value.tiles.length !== MAP_WIDTH * MAP_HEIGHT || value.tiles[CAMP] !== 'camp' || value.tiles.filter(x => x === 'camp').length !== 1) throw new Error('地图数据无效');
     if (!Array.isArray(value.terrain) || value.terrain.length !== MAP_WIDTH * MAP_HEIGHT || value.terrain.some(type => !terrainKnown(type))) throw new Error('地形数据无效');
     if (value.tiles.some(type => type !== null && type !== 'camp' && !known(type))) throw new Error('建筑数据无效');
-    if (value.tiles.some((type, index) => type && (!['grass', 'fertile'].includes(value.terrain[index]) || type === 'farm' && value.terrain[index] !== 'fertile'))) throw new Error('建筑地形不合法');
+    if (value.tiles.some((type, index) => type && value.terrain[index] !== 'grass')) throw new Error('建筑地形不合法');
     for (const type of Object.keys(BUILDINGS)) if (count(value, type) > BUILDINGS[type].limit) throw new Error('建筑数量无效');
     if (!value.jobs || JOBS.some(job => !integer(value.jobs[job], 0, value.population)) || employed(value) > value.population) throw new Error('工作分配无效');
     if (!value.resources || ['food', 'wood', 'stone'].some(key => !integer(value.resources[key], 0, storage(value)))) throw new Error('资源数据无效');
     if (!integer(value.hunger, 0, 1)) throw new Error('饥饿状态无效');
     if (value.project !== null) {
       const p = value.project;
-      if (!p || !(known(p.type) || p.type === 'clear') || !integer(p.tile, 0, MAP_WIDTH * MAP_HEIGHT - 1) || value.tiles[p.tile] !== null || !inReach(value, p.tile) || !integer(p.progress, 0, projectSpec(value, p).work - 1) || (p.type === 'clear' ? !['forest','stone'].includes(value.terrain[p.tile]) : count(value, p.type) >= BUILDINGS[p.type].limit || !['grass','fertile'].includes(value.terrain[p.tile]) || p.type === 'farm' && value.terrain[p.tile] !== 'fertile')) throw new Error('工地数据无效');
+      if (!p || !(known(p.type) || p.type === 'clear') || !integer(p.tile, 0, MAP_WIDTH * MAP_HEIGHT - 1) || value.tiles[p.tile] !== null || !inReach(value, p.tile) || !integer(p.progress, 0, projectSpec(value, p).work - 1) || (p.type === 'clear' ? !['forest','stone'].includes(value.terrain[p.tile]) : count(value, p.type) >= BUILDINGS[p.type].limit || value.terrain[p.tile] !== 'grass')) throw new Error('工地数据无效');
     }
     if (!Array.isArray(value.log) || value.log.length > 50 || value.log.some(item => !item || !integer(item.day, 0, value.day) || typeof item.text !== 'string' || item.text.length > 300 || !['info', 'good', 'warn', 'bad'].includes(item.tone))) throw new Error('日志数据无效');
     if ((value.phase === 'playing' || value.phase === 'won') && value.population === 0) throw new Error('人口与游戏状态矛盾');

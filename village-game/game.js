@@ -89,7 +89,7 @@
   }
   function welcome(isSaved) {
     showModal('welcome', isSaved ? '河谷，还在等你。' : '五个人，一片空地。',
-      `<p>${isSaved ? '已找回这台设备上的村落。回来后时间保持暂停，准备好再继续。' : '这里没有复杂的操作，也没有需要追赶的敌人。先照顾好五位居民，再让更多人把这里当成家。'}</p><ul><li>采食、伐木、采石、建造，四种工作由你分配。</li><li>拖动和缩放地图选址。农圃建在肥沃土地，树林与石矿需先清理。</li><li>20 天内：10 位居民、有足够床位、农圃、仓库，且食物能够自给。</li></ul><p>一开始就能暂停慢慢想，也能点击“推进一天”结算。进度自动保存在浏览器；离线不会推进时间。</p>`,
+      `<p>${isSaved ? '已找回这台设备上的村落。回来后时间保持暂停，准备好再继续。' : '这里没有复杂的操作，也没有需要追赶的敌人。先照顾好五位居民，再让更多人把这里当成家。'}</p><ul><li>采食、伐木、采石、建造，四种工作由你分配。</li><li>拖动和缩放地图选址。农圃可建在普通草地，树林与石矿需先清理。</li><li>20 天内：10 位居民、有足够床位、农圃、仓库，且食物能够自给。</li></ul><p>一开始就能暂停慢慢想，也能点击“推进一天”结算。进度自动保存在浏览器；离线不会推进时间。</p>`,
       [{ label: isSaved ? '继续这段生活' : '开拓这片土地', primary: true, run: begin }]);
   }
   function result() {
@@ -106,7 +106,7 @@
     if (state.project && state.jobs.build === 0) return '工地正在等待建造者。减少其他岗位人数，再为建造分配至少 1 人。';
     if (M.idle(state) > 0) return `有 ${M.idle(state)} 位居民尚未分配工作。点击岗位旁的 ＋，让每双手都有事情做。`;
     if (M.capacity(state) <= state.population) return '先建一座木屋。没有空床位，路过的旅人就不会加入村落。';
-    if (!M.count(state, 'farm')) return '接下来可以建农圃（在浅黄色肥沃土地上）：同样的采食人数，可以养活更多居民。';
+    if (!M.count(state, 'farm')) return '接下来可以建农圃：同样的采食人数，可以养活更多居民。';
     if (!M.count(state, 'warehouse')) return '建一座仓库，把资源上限从 30 提高到 80，也完成一个发展目标。';
     if (M.capacity(state) < 10) return '再建一座木屋，为 10 位居民提前准备好床位。';
     return '保持食物自给，留足两天储粮，等待每三天一次的旅人到访。';
@@ -212,7 +212,7 @@
   $('pause').addEventListener('click', () => { paused = !paused; renderClock(); });
   $('next-day').addEventListener('click', advance);
   document.querySelectorAll('[data-speed]').forEach(button => button.addEventListener('click', () => { speed = Number(button.dataset.speed); save(); renderClock(); }));
-  $('help').addEventListener('click', () => showModal('help', '先照顾人，再扩建村落。', '<p>食物每天先产出再消耗，每人吃 1 份。每名采食者产出 3 份，每座农圃额外增加 1 份 / 人。农圃必须建在肥沃土地，河流和山地不能直接建造。</p><ul><li>用 − 腾出待分配居民，再用 ＋ 安排新岗位。</li><li>拖动地图、滚轮缩放，小地图快速定位；回到营地或全图按钮帮助找路。点击地块，再选建筑。建造者推进工地与清理。</li><li>木屋增加 3 个床位；仓库为每种资源增加 50 容量。</li><li>旅人每 3 天来一次，需要空床位、两天储粮且当天不缺粮。</li><li>连续两天缺粮，有一位居民离开。没人留下或 20 天未达标，本局失败。</li></ul><p>每日新建成的农圃从次日生效。新居民当日领取 2 份食物，从次日开始正常消耗。胜利需要 10 人、住处、农圃、仓库、两天储粮和不亏损的食物生产。</p>', [{ label: '明白了，返回村落', primary: true, run: hideModal }]));
+  $('help').addEventListener('click', () => showModal('help', '先照顾人，再扩建村落。', '<p>食物每天先产出再消耗，每人吃 1 份。每名采食者产出 3 份，每座农圃额外增加 1 份 / 人。农圃可建在普通草地，河流和山地不能直接建造。</p><ul><li>用 − 腾出待分配居民，再用 ＋ 安排新岗位。</li><li>拖动地图、滚轮缩放，小地图快速定位；回到营地或全图按钮帮助找路。点击地块，再选建筑。建造者推进工地与清理。</li><li>木屋增加 3 个床位；仓库为每种资源增加 50 容量。</li><li>旅人每 3 天来一次，需要空床位、两天储粮且当天不缺粮。</li><li>连续两天缺粮，有一位居民离开。没人留下或 20 天未达标，本局失败。</li></ul><p>每日新建成的农圃从次日生效。新居民当日领取 2 份食物，从次日开始正常消耗。胜利需要 10 人、住处、农圃、仓库、两天储粮和不亏损的食物生产。</p>', [{ label: '明白了，返回村落', primary: true, run: hideModal }]));
   $('new-game').addEventListener('click', () => showModal('restart', '重新开拓这片河谷？', '<p>这会替换当前浏览器存档。想保留这座村落，可以先返回并点击“导出存档”。</p>', [{ label: '返回村落', run: hideModal }, { label: '确认重新开始', primary: true, run: restart }]));
   $('export-save').addEventListener('click', () => {
     const blob = new Blob([JSON.stringify({ state, selected, speed }, null, 2)], { type: 'application/json' });

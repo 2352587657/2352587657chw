@@ -9,7 +9,7 @@ html = html.replace('  <script src="model.js" defer></script>\n', '').replace(' 
 scripts = '\n'.join('<script>\n' + (root / name).read_text(encoding='utf-8') + '\n</script>' for name in ['model.js', 'map-view.js', 'game.js'])
 html = html.replace('</body>', scripts + '\n</body>')
 (root / '河谷初生.html').write_text(html, encoding='utf-8')
-out = root.parent / 'downloads' / 'riverdale-0.2.zip'
+out = root.parent / 'downloads' / 'riverdale-0.2.1.zip'
 out.parent.mkdir(exist_ok=True)
 with ZipFile(out, 'w', ZIP_DEFLATED) as archive:
     archive.write(root / '河谷初生.html', '河谷初生/河谷初生.html')

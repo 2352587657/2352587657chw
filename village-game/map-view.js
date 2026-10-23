@@ -1,7 +1,7 @@
 (function () {
   'use strict';
   const M = window.VillageModel, TILE = 48;
-  const colors = { grass:'#c4d4a6', fertile:'#d4d9a1', forest:'#91af80', stone:'#b7bea9', water:'#7aaeb8', hill:'#9ba797' };
+  const colors = { grass:'#c4d4a6', forest:'#91af80', stone:'#b7bea9', water:'#7aaeb8', hill:'#9ba797' };
   class VillageMap {
     constructor(host, icon, onSelect) {
       this.host=host; this.onSelect=onSelect; this.state=null; this.selected=M.CAMP+1;
@@ -84,8 +84,6 @@
         c.fillStyle=colors[t];c.fillRect(px,py,TILE+.4,TILE+.4);
         if(t==='water'){
           c.strokeStyle='#b6d8d6';c.lineWidth=1.4;c.beginPath();c.moveTo(px+8,py+17+(x%2)*9);c.quadraticCurveTo(px+20,py+14,px+35,py+18);c.stroke();
-        }else if(t==='fertile'){
-          c.strokeStyle='#b6bb82';c.lineWidth=1;c.beginPath();for(let n=0;n<3;n++){c.moveTo(px+8,py+12+n*12);c.lineTo(px+40,py+12+n*12);}c.stroke();
         }else if(t==='hill'){
           c.fillStyle='#82917f';c.beginPath();c.moveTo(px+3,py+43);c.lineTo(px+23,py+5);c.lineTo(px+46,py+43);c.fill();c.fillStyle='#bac3b0';c.beginPath();c.moveTo(px+23,py+5);c.lineTo(px+34,py+25);c.lineTo(px+23,py+21);c.lineTo(px+15,py+24);c.fill();
         }else if(t==='stone'){
